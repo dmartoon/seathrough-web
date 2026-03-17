@@ -13,11 +13,13 @@
   },
   "routes": [
     {
-      "pattern": "seathrough.app",
+      "pattern": "www.seathrough.app",
+      "zone_name": "seathrough.app",
       "custom_domain": true
     },
     {
-      "pattern": "www.seathrough.app",
+      "pattern": "seathrough.app",
+      "zone_name": "seathrough.app",
       "custom_domain": true
     }
   ]
