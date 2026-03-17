@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import "./index.css";
 import { PinDetailsPanel } from "./components/map/PinDetailsPanel";
 import { PinMap } from "./components/map/PinMap";
@@ -7,7 +7,10 @@ import type { LatLng, PinnedSpot } from "./types/map";
 
 type TabKey = "map" | "favorites" | "planned";
 
-const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY ?? "";
+type AppConfig = {
+  appName: string;
+  publicGoogleMapsApiKey: string;
+};
 
 function makePin(position: LatLng, label = "Dropped pin"): PinnedSpot {
   const now = Date.now();
@@ -24,7 +27,43 @@ function makePin(position: LatLng, label = "Dropped pin"): PinnedSpot {
 export default function App() {
   const [tab, setTab] = useState<TabKey>("map");
   const [locationError, setLocationError] = useState<string | null>(null);
+  const [config, setConfig] = useState<AppConfig | null>(null);
+  const [configError, setConfigError] = useState<string | null>(null);
   const { view, setView, pin, setPin, clearPin } = useLocalMapState();
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadConfig() {
+      try {
+        const response = await fetch("/api/config", { cache: "no-store" });
+
+        if (!response.ok) {
+          throw new Error(`Config request failed: ${response.status}`);
+        }
+
+        const data = (await response.json()) as AppConfig;
+
+        if (!cancelled) {
+          setConfig(data);
+          setConfigError(null);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setConfig(null);
+          setConfigError(
+            error instanceof Error ? error.message : "Unable to load app config.",
+          );
+        }
+      }
+    }
+
+    loadConfig();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const useMyLocation = () => {
     if (!navigator.geolocation) {
@@ -62,7 +101,7 @@ export default function App() {
     <div className="app-shell">
       <header className="topbar">
         <div>
-          <p className="eyebrow">SeaThrough web</p>
+          <p className="eyebrow">{config?.appName ?? "SeaThrough"} web</p>
           <h1>Pin-first map shell</h1>
         </div>
 
@@ -105,9 +144,9 @@ export default function App() {
         {tab === "map" ? (
           <section className="map-layout">
             <div className="map-panel">
-              {GOOGLE_MAPS_API_KEY ? (
+              {config?.publicGoogleMapsApiKey ? (
                 <PinMap
-                  apiKey={GOOGLE_MAPS_API_KEY}
+                  apiKey={config.publicGoogleMapsApiKey}
                   view={view}
                   pin={pin}
                   onPinChange={setPin}
@@ -115,12 +154,17 @@ export default function App() {
                 />
               ) : (
                 <div className="missing-key-card">
-                  <p className="eyebrow">Google Maps key missing</p>
-                  <h2>Add VITE_GOOGLE_MAPS_API_KEY</h2>
-                  <p className="helper-text">
-                    Create a <code>.env.local</code> file in the project root and add
-                    your Google Maps JavaScript API key there.
+                  <p className="eyebrow">
+                    {configError ? "Config load failed" : "Google Maps key missing"}
                   </p>
+                  <h2>Add PUBLIC_GOOGLE_MAPS_API_KEY</h2>
+                  <p className="helper-text">
+                    Set the Worker runtime variable and expose it through{" "}
+                    <code>/api/config</code>.
+                  </p>
+                  {configError ? (
+                    <p className="helper-text">{configError}</p>
+                  ) : null}
                 </div>
               )}
             </div>
