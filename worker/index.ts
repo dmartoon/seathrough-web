@@ -44,6 +44,15 @@ export default {
       );
     }
 
-    return env.ASSETS.fetch(request);
+    const assets = env.ASSETS;
+
+    if (!assets) {
+      return new Response(
+        "ASSETS binding is missing. Check wrangler.jsonc assets.binding.",
+        { status: 500 },
+      );
+    }
+
+    return assets.fetch(request);
   },
 } satisfies ExportedHandler<Env>;
