@@ -10,5 +10,15 @@
   },
   "vars": {
     "APP_NAME": "SeaThrough"
-  }
+  },
+  "routes": [
+    {
+      "pattern": "seathrough.app",
+      "custom_domain": true
+    },
+    {
+      "pattern": "www.seathrough.app",
+      "custom_domain": true
+    }
+  ]
 }
