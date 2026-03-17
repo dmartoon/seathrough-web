@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>SeaThrough — Privacy Policy</title>
+  <meta name="description" content="SeaThrough Privacy Policy" />
+  <meta name="theme-color" content="#0b1220" />
+
+  <style>
+    :root {
+      --card: rgba(255, 255, 255, 0.08);
+      --cardBorder: rgba(255, 255, 255, 0.22);
+      --text: rgba(255, 255, 255, 0.92);
+      --muted: rgba(255, 255, 255, 0.72);
+      --link: rgba(255, 255, 255, 0.92);
+      --shadow: 0 20px 60px rgba(0,0,0,.45);
+      --radius: 22px;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+
+    /* Fix: put the gradient on html (the page canvas) so it never "seams" as the page scrolls */
+    html {
+      min-height: 100%;
+      background:
+        radial-gradient(900px 500px at 20% 10%, rgba(88, 201, 255, 0.28), transparent 60%),
+        radial-gradient(900px 500px at 80% 20%, rgba(64, 140, 255, 0.22), transparent 60%),
+        radial-gradient(900px 700px at 50% 90%, rgba(0, 206, 180, 0.18), transparent 60%),
+        linear-gradient(180deg, #061027 0%, #040813 55%, #030611 100%);
+      background-repeat: no-repeat;
+      background-attachment: fixed;
+      background-color: #030611;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", Roboto, Helvetica, Arial;
+      color: var(--text);
+      background: transparent;          /* important: prevents a hard edge between html/body */
+      display: flex;
+      justify-content: center;
+      padding: 18px 14px;
+    }
+
+    main { width: min(740px, 100%); }
+
+    .card {
+      background: var(--card);
+      border: 2px solid var(--cardBorder);
+      outline: 2px solid rgba(255,255,255,0.10);
+      outline-offset: -1px;
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 20px 22px;
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+    }
+
+    .top {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 12px;
+    }
+
+    .logo {
+      width: 62px;
+      height: 62px;
+      border-radius: 16px;
+      overflow: hidden;
+      flex: 0 0 auto;
+      border: 1px solid rgba(255,255,255,.18);
+      background: rgba(255,255,255,.06);
+      display: grid;
+      place-items: center;
+    }
+
+    .logo img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 28px;
+      letter-spacing: -0.02em;
+      line-height: 1.1;
+    }
+
+    .subtitle {
+      margin: 6px 0 0;
+      color: var(--muted);
+      font-size: 14.5px;
+      line-height: 1.45;
+    }
+
+    .meta {
+      color: rgba(255,255,255,.66);
+      font-size: 13px;
+      margin-top: 2px;
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin: 10px 0 14px;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 11px 14px;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,.18);
+      text-decoration: none;
+      color: var(--link);
+      background: rgba(255,255,255,.08);
+      transition: transform .12s ease, background .12s ease, border-color .12s ease;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+      font-weight: 600;
+      font-size: 14.5px;
+      white-space: nowrap;
+    }
+
+    .btn:hover {
+      transform: translateY(-1px);
+      background: rgba(255,255,255,.12);
+      border-color: rgba(255,255,255,.24);
+    }
+
+    .hr {
+      height: 1px;
+      background: rgba(255,255,255,.10);
+      margin: 12px 0 6px;
+      border-radius: 999px;
+    }
+
+    .content {
+      color: rgba(255,255,255,.86);
+      font-size: 14.5px;
+      line-height: 1.65;
+    }
+
+    .content h2, .content h3, .content h4 {
+      color: var(--text);
+      letter-spacing: -0.01em;
+      margin: 18px 0 8px;
+    }
+
+    .content h2 { font-size: 20px; margin-top: 0; }
+    .content h3 { font-size: 16.5px; }
+    .content h4 { font-size: 15px; }
+
+    .content p { margin: 10px 0; color: rgba(255,255,255,.84); }
+    .content ul { margin: 10px 0 10px 20px; padding: 0; }
+    .content li { margin: 8px 0; }
+
+    .content a {
+      color: rgba(255,255,255,.88);
+      text-decoration: none;
+      border-bottom: 1px solid rgba(255,255,255,.22);
+    }
+    .content a:hover { border-bottom-color: rgba(255,255,255,.46); }
+  </style>
+</head>
+
+<body>
+  <main>
+    <section class="card" aria-label="SeaThrough privacy policy">
+      <div class="top">
+        <div class="logo" aria-label="SeaThrough logo">
+          <img src="/assets/app-icon.png" alt="SeaThrough app icon" />
+        </div>
+        <div>
+          <h1>Privacy Policy</h1>
+          <p class="subtitle">SeaThrough</p>
+          <div class="meta"><strong>Effective date:</strong> 2026-01-22</div>
+        </div>
+      </div>
+
+      <div class="actions">
+        <a class="btn" href="/">Back to home</a>
+      </div>
+
+      <div class="hr"></div>
+
+      <div class="content">
+        <p>
+          SeaThrough provides ocean conditions and estimated water clarity for informational purposes only.
+          This Privacy Policy explains what information SeaThrough collects, how it is used, and your choices.
+        </p>
+
+        <h3>Summary</h3>
+        <ul>
+          <li><strong>No account required.</strong> SeaThrough does not require you to create an account.</li>
+          <li><strong>On-device storage.</strong> Saved locations (Favorites) and saved forecast entries (Planned) are stored locally on your device.</li>
+          <li><strong>No selling / no ads.</strong> SeaThrough does not sell your personal information and does not serve advertising.</li>
+          <li><strong>Data sent to providers.</strong> When you view maps or request forecasts for a location, the app may send coordinates to third-party providers to return results.</li>
+        </ul>
+
+        <h3>Information We Collect</h3>
+        <ul>
+          <li><strong>No account data.</strong> SeaThrough does not collect usernames, passwords, or profile information because no account is required.</li>
+          <li><strong>On-device app data.</strong> Favorites and Planned items you create are stored on your device (for example, using iOS local storage such as UserDefaults).</li>
+        </ul>
+
+        <h3>Location Information</h3>
+        <p>
+          If you grant location permission, SeaThrough may access your device’s approximate or precise location to show your position on the map
+          and to recenter the map around you. You can use the app without granting location permission by using the map,
+          search, and dropping pins manually.
+        </p>
+        <p>You can change location permissions at any time in iOS Settings.</p>
+
+        <h3>Data from Third-Party Services</h3>
+        <p>
+          SeaThrough displays maps and retrieves forecast/conditions data from third-party providers. When you request
+          data for a specific location (for example, a dropped pin, a favorite, or a planned forecast entry), the app may send that location
+          (coordinates) to those providers to return results for that area. Requests to these providers may also include standard network information
+          such as your IP address and device/user agent, which is typical for internet communications.
+        </p>
+
+        <h4>Examples of providers</h4>
+        <ul>
+          <li>Mapping services (for map tiles and rendering)</li>
+          <li>Weather/ocean data services (for forecasts and conditions)</li>
+          <li>Public data sources (for buoy, tide, and related marine information)</li>
+        </ul>
+        <p>Third-party providers handle any information they receive according to their own privacy policies.</p>
+
+        <h3>Diagnostics</h3>
+        <p>
+          If enabled in your device settings, Apple may provide aggregated crash or diagnostic information to help
+          improve app stability and performance. SeaThrough does not use this information to identify you.
+        </p>
+
+        <h3>Sharing</h3>
+        <p>
+          SeaThrough does not sell your personal information and does not share data for cross-context behavioral advertising.
+          We share information only as needed to operate the app (for example, requesting map tiles or forecast data from third-party services)
+          or to comply with legal obligations.
+        </p>
+
+        <h3>Data Retention</h3>
+        <p>
+          Favorites and Planned items remain on your device until you delete them or uninstall the app. Data sent to third-party providers
+          is handled according to their own policies and retention practices.
+        </p>
+
+        <h3>Your Choices</h3>
+        <ul>
+          <li>You can use SeaThrough without granting location access.</li>
+          <li>You can disable location permission at any time in iOS Settings.</li>
+          <li>You can delete Favorites and Planned items inside the app.</li>
+        </ul>
+
+        <h3>Children’s Privacy</h3>
+        <p>
+          SeaThrough is not directed to children under 13, and we do not knowingly collect personal information from children.
+        </p>
+
+        <h3>Changes to This Policy</h3>
+        <p>
+          We may update this Privacy Policy from time to time. The effective date above will reflect the latest version.
+        </p>
+
+        <h3>Contact</h3>
+        <p>
+          If you have questions about this Privacy Policy, contact:
+          <a href="mailto:support@seathrough.app">support@seathrough.app</a>
+        </p>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
