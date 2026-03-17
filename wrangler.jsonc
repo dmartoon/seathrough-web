@@ -1,0 +1,13 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "seathrough-web",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-03-16",
+  "assets": {
+    "not_found_handling": "single-page-application"
+  },
+  "vars": {
+    "APP_NAME": "SeaThrough",
+    "PUBLIC_GOOGLE_MAPS_API_KEY": ""
+  }
+}
