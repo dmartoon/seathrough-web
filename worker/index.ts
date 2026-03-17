@@ -1,6 +1,7 @@
 export interface Env {
   APP_NAME?: string;
   PUBLIC_GOOGLE_MAPS_API_KEY?: string;
+  ASSETS?: Fetcher;
 }
 
 function json(data: unknown, init: ResponseInit = {}) {
@@ -15,7 +16,7 @@ function json(data: unknown, init: ResponseInit = {}) {
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
 
     if (url.pathname === "/api/health") {
@@ -43,6 +44,6 @@ export default {
       );
     }
 
-    return new Response("Not found", { status: 404 });
+    return env.ASSETS.fetch(request);
   },
 } satisfies ExportedHandler<Env>;

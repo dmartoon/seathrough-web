@@ -1,151 +1,159 @@
-import { useEffect, useMemo, useState } from "react";
-import { FavoritesTab } from "./features/favorites/FavoritesTab";
-import { MapTab } from "./features/map/MapTab";
-import { PlannedTab } from "./features/planned/PlannedTab";
-import { SUPPORTED_LOCATIONS } from "./data/supportedLocations";
-import type { DiveLocation, PinnedSpot, PlannedDive } from "./domain/types";
-import { useFavoritesStore } from "./stores/useFavoritesStore";
-import { usePlannedDivesStore } from "./stores/usePlannedDivesStore";
+import { useState } from "react";
+import "./index.css";
+import { PinDetailsPanel } from "./components/map/PinDetailsPanel";
+import { PinMap } from "./components/map/PinMap";
+import { useLocalMapState } from "./hooks/useLocalMapState";
+import type { LatLng, PinnedSpot } from "./types/map";
 
-type RootTab = "favorites" | "planned" | "map";
+type TabKey = "map" | "favorites" | "planned";
 
-function toPinnedSpot(location: DiveLocation): PinnedSpot {
-  const now = new Date().toISOString();
+const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY ?? "";
+
+function makePin(position: LatLng, label = "Dropped pin"): PinnedSpot {
+  const now = Date.now();
 
   return {
-    id: location.id,
-    name: location.name,
-    latitude: location.latitude,
-    longitude: location.longitude,
-    buoyId: location.buoyId,
-    tideStation: location.tideStation,
-    shoreDirection: location.shoreDirection,
-    region: location.region,
-    source: "supported",
+    id: `pin-${now}`,
+    position,
+    label,
     createdAt: now,
     updatedAt: now,
   };
 }
 
-function toPlannedDive(location: DiveLocation, slotTime: string): PlannedDive {
-  return {
-    id: crypto.randomUUID(),
-    spotId: location.id,
-    spotName: location.name,
-    latitude: location.latitude,
-    longitude: location.longitude,
-    buoyId: location.buoyId,
-    tideStation: location.tideStation,
-    shoreDirection: location.shoreDirection,
-    region: location.region,
-    slotTime,
-    createdAt: new Date().toISOString(),
-  };
-}
-
 export default function App() {
-  const [activeTab, setActiveTab] = useState<RootTab>("favorites");
-  const [apiStatus, setApiStatus] = useState("checking");
+  const [tab, setTab] = useState<TabKey>("map");
+  const [locationError, setLocationError] = useState<string | null>(null);
+  const { view, setView, pin, setPin, clearPin } = useLocalMapState();
 
-  const favorites = useFavoritesStore();
-  const planned = usePlannedDivesStore();
-
-  useEffect(() => {
-    const controller = new AbortController();
-
-    fetch("/api/health", { signal: controller.signal })
-      .then(async (response) => {
-        if (!response.ok) {
-          throw new Error(`API status ${response.status}`);
-        }
-        await response.json();
-        setApiStatus("ok");
-      })
-      .catch(() => {
-        setApiStatus("offline");
-      });
-
-    return () => controller.abort();
-  }, []);
-
-  const activeScreen = useMemo(() => {
-    switch (activeTab) {
-      case "favorites":
-        return (
-          <FavoritesTab
-            favorites={favorites.spots}
-            onRemove={favorites.remove}
-          />
-        );
-      case "planned":
-        return <PlannedTab dives={planned.dives} onRemove={planned.remove} />;
-      case "map":
-        return (
-          <MapTab
-            locations={SUPPORTED_LOCATIONS}
-            apiStatus={apiStatus}
-            onSaveFavorite={(location) => favorites.addOrReplace(toPinnedSpot(location))}
-            onPlanDive={(location, slotTime) =>
-              planned.add(toPlannedDive(location, slotTime))
-            }
-          />
-        );
-      default:
-        return null;
+  const useMyLocation = () => {
+    if (!navigator.geolocation) {
+      setLocationError("Geolocation is not supported on this device.");
+      return;
     }
-  }, [activeTab, apiStatus, favorites, planned]);
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const next = {
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        };
+
+        setView({
+          center: next,
+          zoom: Math.max(view.zoom, 13),
+        });
+
+        setPin(makePin(next, "My location"));
+        setLocationError(null);
+      },
+      (error) => {
+        setLocationError(error.message || "Unable to get your location.");
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 0,
+      },
+    );
+  };
 
   return (
     <div className="app-shell">
-      <header className="hero panel">
+      <header className="topbar">
         <div>
-          <p className="eyebrow">SeaThrough Web</p>
-          <h1>Local-only web shell</h1>
-          <p className="muted hero-copy">
-            This first commit mirrors the iPhone app structure: Favorites,
-            Planned, and Map, with browser-local persistence and a Cloudflare
-            Worker API entrypoint.
-          </p>
+          <p className="eyebrow">SeaThrough web</p>
+          <h1>Pin-first map shell</h1>
         </div>
 
-        <div className="hero-stats">
-          <div className="stat-card">
-            <span className="stat-label">Favorites</span>
-            <strong>{favorites.spots.length}</strong>
+        <div className="topbar-metrics">
+          <div className="metric-card">
+            <span>Selected pin</span>
+            <strong>{pin ? "Ready" : "None"}</strong>
           </div>
-          <div className="stat-card">
-            <span className="stat-label">Planned</span>
-            <strong>{planned.dives.length}</strong>
-          </div>
-          <div className="stat-card">
-            <span className="stat-label">API</span>
-            <strong>{apiStatus}</strong>
+          <div className="metric-card">
+            <span>Center</span>
+            <strong>
+              {view.center.lat.toFixed(3)}, {view.center.lng.toFixed(3)}
+            </strong>
           </div>
         </div>
       </header>
 
-      <nav className="tabs panel" aria-label="Primary">
+      <nav className="tabbar">
         <button
-          className={activeTab === "favorites" ? "tab active" : "tab"}
-          onClick={() => setActiveTab("favorites")}
+          className={tab === "map" ? "tab active" : "tab"}
+          onClick={() => setTab("map")}
+        >
+          Map
+        </button>
+        <button
+          className={tab === "favorites" ? "tab active" : "tab"}
+          onClick={() => setTab("favorites")}
         >
           Favorites
         </button>
         <button
-          className={activeTab === "planned" ? "tab active" : "tab"}
-          onClick={() => setActiveTab("planned")}
+          className={tab === "planned" ? "tab active" : "tab"}
+          onClick={() => setTab("planned")}
         >
           Planned
         </button>
-        <button
-          className={activeTab === "map" ? "tab active" : "tab"}
-          onClick={() => setActiveTab("map")}
-        >
-          Map
-        </button>
       </nav>
 
-      <main>{activeScreen}</main>
+      <main className="app-body">
+        {tab === "map" ? (
+          <section className="map-layout">
+            <div className="map-panel">
+              {GOOGLE_MAPS_API_KEY ? (
+                <PinMap
+                  apiKey={GOOGLE_MAPS_API_KEY}
+                  view={view}
+                  pin={pin}
+                  onPinChange={setPin}
+                  onViewChange={setView}
+                />
+              ) : (
+                <div className="missing-key-card">
+                  <p className="eyebrow">Google Maps key missing</p>
+                  <h2>Add VITE_GOOGLE_MAPS_API_KEY</h2>
+                  <p className="helper-text">
+                    Create a <code>.env.local</code> file in the project root and add
+                    your Google Maps JavaScript API key there.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <PinDetailsPanel
+              pin={pin}
+              onUseMyLocation={useMyLocation}
+              onClearPin={clearPin}
+              locationError={locationError}
+            />
+          </section>
+        ) : tab === "favorites" ? (
+          <section className="placeholder-panel">
+            <div className="details-card">
+              <p className="eyebrow">Favorites</p>
+              <h2>Coming next</h2>
+              <p className="helper-text">
+                Saved pins will live here once the map interaction is locked in.
+              </p>
+            </div>
+          </section>
+        ) : (
+          <section className="placeholder-panel">
+            <div className="details-card">
+              <p className="eyebrow">Planned</p>
+              <h2>Coming next</h2>
+              <p className="helper-text">
+                Planned dives will be created from saved pins after the forecast step.
+              </p>
+            </div>
+          </section>
+        )}
+      </main>
     </div>
   );
 }

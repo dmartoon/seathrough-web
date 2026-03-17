@@ -1,0 +1,262 @@
+:root {
+  color-scheme: dark;
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  background:
+    radial-gradient(circle at top left, rgba(54, 126, 255, 0.18), transparent 30%),
+    linear-gradient(180deg, #021224 0%, #031528 45%, #041a30 100%);
+  color: #e8f2ff;
+  line-height: 1.5;
+  font-weight: 400;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  min-height: 100%;
+  height: 100%;
+}
+
+body {
+  min-width: 320px;
+  background:
+    radial-gradient(circle at top left, rgba(54, 126, 255, 0.18), transparent 30%),
+    linear-gradient(180deg, #021224 0%, #031528 45%, #041a30 100%);
+  color: #e8f2ff;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+code {
+  font-family:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+    "Courier New", monospace;
+}
+
+.app-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px;
+}
+
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+.topbar h1 {
+  margin: 4px 0 0;
+  font-size: clamp(2rem, 3vw, 3rem);
+  line-height: 1;
+}
+
+.topbar-metrics {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.metric-card,
+.tabbar,
+.details-card,
+.missing-key-card,
+.map-panel {
+  border: 1px solid rgba(160, 199, 255, 0.18);
+  background: rgba(8, 24, 43, 0.72);
+  backdrop-filter: blur(12px);
+  border-radius: 22px;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.28);
+}
+
+.metric-card {
+  min-width: 150px;
+  padding: 12px 16px;
+}
+
+.metric-card span {
+  display: block;
+  color: rgba(232, 242, 255, 0.72);
+  font-size: 0.88rem;
+}
+
+.metric-card strong {
+  display: block;
+  margin-top: 4px;
+  font-size: 1rem;
+}
+
+.eyebrow {
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 0.76rem;
+  color: rgba(232, 242, 255, 0.68);
+}
+
+.tabbar {
+  display: inline-flex;
+  gap: 8px;
+  padding: 8px;
+  width: 100%;
+  max-width: 560px;
+}
+
+.tab {
+  border: 0;
+  background: transparent;
+  color: rgba(232, 242, 255, 0.76);
+  padding: 12px 18px;
+  border-radius: 16px;
+  flex: 1;
+}
+
+.tab.active {
+  background: rgba(67, 135, 255, 0.26);
+  color: white;
+}
+
+.app-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.map-layout {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 16px;
+}
+
+.map-panel {
+  min-height: 560px;
+  overflow: hidden;
+  padding: 0;
+}
+
+.map-canvas {
+  width: 100%;
+  height: 100%;
+  min-height: 560px;
+}
+
+.map-canvas > div {
+  width: 100%;
+  height: 100%;
+}
+
+.details-panel,
+.placeholder-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.details-card,
+.missing-key-card {
+  padding: 20px;
+}
+
+.details-card h2,
+.details-card h3,
+.missing-key-card h2 {
+  margin: 6px 0 10px;
+}
+
+.helper-text {
+  margin: 0;
+  color: rgba(232, 242, 255, 0.75);
+}
+
+.coord-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin: 16px 0;
+}
+
+.coord-grid > div {
+  padding: 14px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.coord-label {
+  display: block;
+  font-size: 0.84rem;
+  color: rgba(232, 242, 255, 0.68);
+  margin-bottom: 6px;
+}
+
+.details-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+
+.primary-button,
+.secondary-button {
+  border-radius: 14px;
+  padding: 12px 16px;
+  border: 0;
+}
+
+.primary-button {
+  background: #2f7cff;
+  color: white;
+}
+
+.secondary-button {
+  background: rgba(255, 255, 255, 0.08);
+  color: white;
+}
+
+.secondary-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.error-text {
+  color: #ffb4b4;
+  margin: 14px 0 0;
+}
+
+.muted-card {
+  opacity: 0.92;
+}
+
+@media (max-width: 980px) {
+  .map-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .map-panel {
+    min-height: 58vh;
+  }
+
+  .map-canvas {
+    min-height: 58vh;
+  }
+}
