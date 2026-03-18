@@ -336,6 +336,7 @@ export function PinMap({
           mapTypeId={mapMode}
           gestureHandling="greedy"
           disableDefaultUI={true}
+          keyboardShortcuts={false}
           clickableIcons={false}
           streetViewControl={false}
           fullscreenControl={false}

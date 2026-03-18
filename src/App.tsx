@@ -195,7 +195,7 @@ export default function App() {
 
     if (tab === "favorites") {
       return (
-        <div className="placeholder-stage centered-stage">
+        <div className="placeholder-stage centered-stage tab-placeholder-stage">
           <div className="details-card centered-card">
             <p className="eyebrow">Favorites</p>
             <h2>Coming next</h2>
@@ -208,7 +208,7 @@ export default function App() {
     }
 
     return (
-      <div className="placeholder-stage centered-stage">
+      <div className="placeholder-stage centered-stage tab-placeholder-stage">
         <div className="details-card centered-card">
           <p className="eyebrow">Planned</p>
           <h2>Coming next</h2>
