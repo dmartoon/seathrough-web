@@ -14,6 +14,18 @@ type PinMapProps = {
 
 type MapMode = "roadmap" | "hybrid";
 
+type MapProjection = any;
+
+type PendingPress = {
+  pointerId: number;
+  startedX: number;
+  startedY: number;
+  currentX: number;
+  currentY: number;
+  timerId: number;
+  fired: boolean;
+};
+
 function normalizeLatLng(value: unknown): LatLng | null {
   if (!value || typeof value !== "object") return null;
 
@@ -166,6 +178,39 @@ function DraggablePin({
   return null;
 }
 
+function ProjectionBridge({
+  onProjectionReady,
+}: {
+  onProjectionReady: (projection: MapProjection | null) => void;
+}) {
+  const map = useMap();
+
+  useEffect(() => {
+    const googleMaps = (window as Window & { google?: any }).google?.maps;
+
+    if (!map || !googleMaps) return;
+
+    const overlay = new googleMaps.OverlayView();
+
+    overlay.onAdd = () => {};
+    overlay.draw = () => {
+      onProjectionReady(overlay.getProjection() ?? null);
+    };
+    overlay.onRemove = () => {
+      onProjectionReady(null);
+    };
+
+    overlay.setMap(map);
+
+    return () => {
+      overlay.setMap(null);
+      onProjectionReady(null);
+    };
+  }, [map, onProjectionReady]);
+
+  return null;
+}
+
 function MapChrome({
   appName,
   mapMode,
@@ -280,7 +325,7 @@ function MapChrome({
             value={searchQuery}
             onChange={(event) => setSearchQuery(event.target.value)}
             className="map-search-input"
-            placeholder="Search place"
+            placeholder="Search place or long press on map"
             autoComplete="off"
             enterKeyHint="search"
           />
@@ -316,6 +361,9 @@ function MapChrome({
   );
 }
 
+const LONG_PRESS_MS = 450;
+const MOVE_CANCEL_PX = 10;
+
 export function PinMap({
   apiKey,
   appName,
@@ -325,10 +373,135 @@ export function PinMap({
   onViewChange,
 }: PinMapProps) {
   const [mapMode, setMapMode] = useState<MapMode>("roadmap");
+  const mapCanvasRef = useRef<HTMLDivElement | null>(null);
+  const projectionRef = useRef<MapProjection | null>(null);
+  const pendingPressRef = useRef<PendingPress | null>(null);
+  const pinRef = useRef<PinnedSpot | null>(pin);
+
+  pinRef.current = pin;
+
+  useEffect(() => {
+    const element = mapCanvasRef.current;
+
+    if (!element) return;
+
+    const clearPendingPress = () => {
+      const pendingPress = pendingPressRef.current;
+
+      if (pendingPress) {
+        window.clearTimeout(pendingPress.timerId);
+        pendingPressRef.current = null;
+      }
+    };
+
+    const isInteractiveTarget = (target: EventTarget | null) => {
+      if (!(target instanceof Element)) return false;
+
+      return Boolean(target.closest("button, input, textarea, select, form, a, .map-overlay-top, .map-overlay-bottom-right"));
+    };
+
+    const clientPointToLatLng = (clientX: number, clientY: number) => {
+      const projection = projectionRef.current;
+      const googleMaps = (window as Window & { google?: any }).google?.maps;
+
+      if (!projection || !googleMaps) return null;
+
+      const bounds = element.getBoundingClientRect();
+      const point = new googleMaps.Point(clientX - bounds.left, clientY - bounds.top);
+
+      return normalizeLatLng(projection.fromContainerPixelToLatLng(point));
+    };
+
+    const dropPinAtClientPoint = (clientX: number, clientY: number) => {
+      const position = clientPointToLatLng(clientX, clientY);
+      if (!position) return;
+
+      const now = Date.now();
+
+      onPinChange({
+        id: `pin-${now}`,
+        position,
+        label: "Dropped pin",
+        createdAt: pinRef.current?.createdAt ?? now,
+        updatedAt: now,
+      });
+    };
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!event.isPrimary || event.button !== 0 || isInteractiveTarget(event.target)) {
+        return;
+      }
+
+      clearPendingPress();
+
+      const pendingPress: PendingPress = {
+        pointerId: event.pointerId,
+        startedX: event.clientX,
+        startedY: event.clientY,
+        currentX: event.clientX,
+        currentY: event.clientY,
+        timerId: 0,
+        fired: false,
+      };
+
+      pendingPress.timerId = window.setTimeout(() => {
+        const currentPress = pendingPressRef.current;
+
+        if (!currentPress || currentPress.pointerId !== event.pointerId || currentPress.fired) {
+          return;
+        }
+
+        currentPress.fired = true;
+        dropPinAtClientPoint(currentPress.currentX, currentPress.currentY);
+      }, LONG_PRESS_MS);
+
+      pendingPressRef.current = pendingPress;
+    };
+
+    const handlePointerMove = (event: PointerEvent) => {
+      const pendingPress = pendingPressRef.current;
+
+      if (!pendingPress || pendingPress.pointerId !== event.pointerId) return;
+
+      pendingPress.currentX = event.clientX;
+      pendingPress.currentY = event.clientY;
+
+      const movedX = event.clientX - pendingPress.startedX;
+      const movedY = event.clientY - pendingPress.startedY;
+      const movedDistance = Math.hypot(movedX, movedY);
+
+      if (!pendingPress.fired && movedDistance > MOVE_CANCEL_PX) {
+        clearPendingPress();
+      }
+    };
+
+    const handlePointerEnd = (event: PointerEvent) => {
+      const pendingPress = pendingPressRef.current;
+
+      if (!pendingPress || pendingPress.pointerId !== event.pointerId) return;
+
+      clearPendingPress();
+    };
+
+    element.addEventListener("pointerdown", handlePointerDown, true);
+    element.addEventListener("pointermove", handlePointerMove, true);
+    element.addEventListener("pointerup", handlePointerEnd, true);
+    element.addEventListener("pointercancel", handlePointerEnd, true);
+    element.addEventListener("pointerleave", handlePointerEnd, true);
+
+    return () => {
+      clearPendingPress();
+      element.removeEventListener("pointerdown", handlePointerDown, true);
+      element.removeEventListener("pointermove", handlePointerMove, true);
+      element.removeEventListener("pointerup", handlePointerEnd, true);
+      element.removeEventListener("pointercancel", handlePointerEnd, true);
+      element.removeEventListener("pointerleave", handlePointerEnd, true);
+    };
+  }, [onPinChange]);
 
   return (
     <APIProvider apiKey={apiKey}>
-      <div className="map-canvas ios-map-canvas">
+      <div ref={mapCanvasRef} className="map-canvas ios-map-canvas">
         <Map
           className="map-surface"
           center={view.center}
@@ -341,20 +514,12 @@ export function PinMap({
           streetViewControl={false}
           fullscreenControl={false}
           mapTypeControl={false}
-          onClick={(event: any) => {
-            const latLng = normalizeLatLng(event?.detail?.latLng ?? event?.latLng);
-
-            if (!latLng) return;
-
-            const now = Date.now();
-
-            onPinChange({
-              id: `pin-${now}`,
-              position: latLng,
-              label: "Dropped pin",
-              createdAt: pin?.createdAt ?? now,
-              updatedAt: now,
-            });
+          onDragstart={() => {
+            const pendingPress = pendingPressRef.current;
+            if (pendingPress) {
+              window.clearTimeout(pendingPress.timerId);
+              pendingPressRef.current = null;
+            }
           }}
           onCameraChanged={(event: any) => {
             const center = normalizeLatLng(event?.detail?.center);
@@ -366,6 +531,9 @@ export function PinMap({
           }}
         />
 
+        <ProjectionBridge onProjectionReady={(projection) => {
+          projectionRef.current = projection;
+        }} />
         <DraggablePin pin={pin} onPinChange={onPinChange} />
         <MapChrome
           appName={appName}

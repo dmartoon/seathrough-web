@@ -37,13 +37,13 @@ export function PinDetailsPanel({
             </div>
 
             <p className="helper-text">
-              Click anywhere on the map to place a pin, then drag it to refine the
-              location.
+              Long press anywhere on the map to place a pin, then drag it to refine
+              the location.
             </p>
           </>
         ) : (
           <p className="helper-text">
-            Tap or click on the map to place your first pin.
+            Long press on the map to place your first pin.
           </p>
         )}
 
