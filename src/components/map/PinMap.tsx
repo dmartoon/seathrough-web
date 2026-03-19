@@ -1,5 +1,6 @@
-import { APIProvider, Map, useMap } from "@vis.gl/react-google-maps";
-import { useEffect, useRef, useState } from "react";
+import { APIProvider, Map as GoogleMap, useMap } from "@vis.gl/react-google-maps";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import type { PinnedSpot as SavedSpot } from "../../domain/types";
 import type { LatLng, MapViewState, PinnedSpot } from "../../types/map";
 
 type PinMapProps = {
@@ -7,14 +8,18 @@ type PinMapProps = {
   appName: string;
   view: MapViewState;
   pin: PinnedSpot | null;
+  favorites: SavedSpot[];
   onPinChange: (pin: PinnedSpot) => void;
   onViewChange: (view: MapViewState) => void;
+  onFavoriteSelect: (spot: SavedSpot) => void;
   onClearPin: () => void;
 };
 
 type MapMode = "roadmap" | "hybrid";
 
-type MapProjection = any;
+type MapProjection = {
+  fromContainerPixelToLatLng: (point: unknown) => unknown;
+};
 
 type PendingPress = {
   pointerId: number;
@@ -127,7 +132,7 @@ function DraggablePin({
   pinRef.current = pin;
 
   useEffect(() => {
-    const googleMaps = (window as Window & { google?: any }).google?.maps;
+    const googleMaps = (window as Window & { google?: { maps?: any } }).google?.maps;
 
     if (!map || !googleMaps) return;
 
@@ -147,7 +152,7 @@ function DraggablePin({
         title: pin.label,
       });
 
-      markerRef.current.addListener("dragend", (event: any) => {
+      markerRef.current.addListener("dragend", (event: { latLng?: unknown }) => {
         const nextPosition = normalizeLatLng(event?.latLng);
         const currentPin = pinRef.current;
 
@@ -178,6 +183,78 @@ function DraggablePin({
   return null;
 }
 
+function FavoriteMarkers({
+  favorites,
+  onSelect,
+}: {
+  favorites: SavedSpot[];
+  onSelect: (spot: SavedSpot) => void;
+}) {
+  const map = useMap();
+  const markersRef = useRef<globalThis.Map<string, any>>(new globalThis.Map());
+
+  useEffect(() => {
+    const googleMaps = (window as Window & { google?: { maps?: any } }).google?.maps;
+
+    if (!map || !googleMaps) return;
+
+    const activeIds = new Set(favorites.map((spot) => spot.id));
+
+    for (const [id, marker] of markersRef.current.entries()) {
+      if (!activeIds.has(id)) {
+        marker.setMap(null);
+        markersRef.current.delete(id);
+      }
+    }
+
+    favorites.forEach((spot) => {
+      const existing = markersRef.current.get(spot.id);
+
+      if (existing) {
+        existing.setPosition({ lat: spot.latitude, lng: spot.longitude });
+        existing.setTitle(spot.name);
+        existing.setMap(map);
+        return;
+      }
+
+      const marker = new googleMaps.Marker({
+        map,
+        position: { lat: spot.latitude, lng: spot.longitude },
+        title: spot.name,
+        icon: {
+          path: googleMaps.SymbolPath.CIRCLE,
+          scale: 11,
+          fillColor: "#2480ee",
+          fillOpacity: 1,
+          strokeColor: "#ffffff",
+          strokeOpacity: 0.95,
+          strokeWeight: 2,
+        },
+        label: {
+          text: "★",
+          color: "#ffffff",
+          fontSize: "11px",
+          fontWeight: "700",
+        },
+      });
+
+      marker.addListener("click", () => onSelect(spot));
+      markersRef.current.set(spot.id, marker);
+    });
+  }, [favorites, map, onSelect]);
+
+  useEffect(() => {
+    return () => {
+      for (const marker of markersRef.current.values()) {
+        marker.setMap(null);
+      }
+      markersRef.current.clear();
+    };
+  }, []);
+
+  return null;
+}
+
 function ProjectionBridge({
   onProjectionReady,
 }: {
@@ -186,7 +263,7 @@ function ProjectionBridge({
   const map = useMap();
 
   useEffect(() => {
-    const googleMaps = (window as Window & { google?: any }).google?.maps;
+    const googleMaps = (window as Window & { google?: { maps?: any } }).google?.maps;
 
     if (!map || !googleMaps) return;
 
@@ -194,7 +271,7 @@ function ProjectionBridge({
 
     overlay.onAdd = () => {};
     overlay.draw = () => {
-      onProjectionReady(overlay.getProjection() ?? null);
+      onProjectionReady((overlay.getProjection() as MapProjection | null) ?? null);
     };
     overlay.onRemove = () => {
       onProjectionReady(null);
@@ -232,7 +309,7 @@ function MapChrome({
   const satelliteActive = mapMode === "hybrid";
 
   useEffect(() => {
-    const googleMaps = (window as Window & { google?: any }).google?.maps;
+    const googleMaps = (window as Window & { google?: { maps?: any } }).google?.maps;
 
     if (googleMaps && !geocoderRef.current) {
       geocoderRef.current = new googleMaps.Geocoder();
@@ -243,7 +320,7 @@ function MapChrome({
     onViewChange({ center, zoom });
   };
 
-  const handleSearch = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleSearch = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
     const query = searchQuery.trim();
@@ -255,7 +332,7 @@ function MapChrome({
       return;
     }
 
-    geocoder.geocode({ address: query }, (results: any, statusCode: string) => {
+    geocoder.geocode({ address: query }, (results: any[] | null, statusCode: string) => {
       if (statusCode !== "OK" || !results?.length) {
         setStatus("Place not found.");
         return;
@@ -369,8 +446,11 @@ export function PinMap({
   appName,
   view,
   pin,
+  favorites,
   onPinChange,
   onViewChange,
+  onFavoriteSelect,
+  onClearPin,
 }: PinMapProps) {
   const [mapMode, setMapMode] = useState<MapMode>("roadmap");
   const mapCanvasRef = useRef<HTMLDivElement | null>(null);
@@ -397,12 +477,14 @@ export function PinMap({
     const isInteractiveTarget = (target: EventTarget | null) => {
       if (!(target instanceof Element)) return false;
 
-      return Boolean(target.closest("button, input, textarea, select, form, a, .map-overlay-top, .map-overlay-bottom-right"));
+      return Boolean(
+        target.closest("button, input, textarea, select, form, a, .map-overlay-top, .map-overlay-bottom-right, .map-popup-dock"),
+      );
     };
 
     const clientPointToLatLng = (clientX: number, clientY: number) => {
       const projection = projectionRef.current;
-      const googleMaps = (window as Window & { google?: any }).google?.maps;
+      const googleMaps = (window as Window & { google?: { maps?: any } }).google?.maps;
 
       if (!projection || !googleMaps) return null;
 
@@ -480,7 +562,16 @@ export function PinMap({
 
       if (!pendingPress || pendingPress.pointerId !== event.pointerId) return;
 
+      const movedX = event.clientX - pendingPress.startedX;
+      const movedY = event.clientY - pendingPress.startedY;
+      const movedDistance = Math.hypot(movedX, movedY);
+      const shouldClearPin = !pendingPress.fired && movedDistance <= MOVE_CANCEL_PX && Boolean(pinRef.current);
+
       clearPendingPress();
+
+      if (shouldClearPin) {
+        onClearPin();
+      }
     };
 
     element.addEventListener("pointerdown", handlePointerDown, true);
@@ -497,12 +588,16 @@ export function PinMap({
       element.removeEventListener("pointercancel", handlePointerEnd, true);
       element.removeEventListener("pointerleave", handlePointerEnd, true);
     };
-  }, [onPinChange]);
+  }, [onClearPin, onPinChange]);
+
+  const handleProjectionReady = useCallback((projection: MapProjection | null) => {
+    projectionRef.current = projection;
+  }, []);
 
   return (
     <APIProvider apiKey={apiKey}>
       <div ref={mapCanvasRef} className="map-canvas ios-map-canvas">
-        <Map
+        <GoogleMap
           className="map-surface"
           center={view.center}
           zoom={view.zoom}
@@ -521,7 +616,7 @@ export function PinMap({
               pendingPressRef.current = null;
             }
           }}
-          onCameraChanged={(event: any) => {
+          onCameraChanged={(event: { detail?: { center?: unknown; zoom?: number } }) => {
             const center = normalizeLatLng(event?.detail?.center);
             const zoom = event?.detail?.zoom;
 
@@ -531,10 +626,9 @@ export function PinMap({
           }}
         />
 
-        <ProjectionBridge onProjectionReady={(projection) => {
-          projectionRef.current = projection;
-        }} />
+        <ProjectionBridge onProjectionReady={handleProjectionReady} />
         <DraggablePin pin={pin} onPinChange={onPinChange} />
+        <FavoriteMarkers favorites={favorites} onSelect={onFavoriteSelect} />
         <MapChrome
           appName={appName}
           mapMode={mapMode}

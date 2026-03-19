@@ -1,13 +1,32 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import "./index.css";
+import { MapSpotCard } from "./components/map/MapSpotCard";
 import { PinMap } from "./components/map/PinMap";
+import {
+  buildPlannedDive,
+  findMatchingFavorite,
+  makeSavedSpotFromMapPin,
+  makeSavedSpotFromPlannedDive,
+} from "./domain/spotHelpers";
+import type { PinnedSpot as SavedSpot } from "./domain/types";
+import { FavoritesTab } from "./features/favorites/FavoritesTab";
+import { ForecastDetailScreen } from "./features/forecast/ForecastDetailScreen";
+import { PlannedTab } from "./features/planned/PlannedTab";
 import { useLocalMapState } from "./hooks/useLocalMapState";
+import { useFavoritesStore } from "./stores/useFavoritesStore";
+import { usePlannedDivesStore } from "./stores/usePlannedDivesStore";
+import type { PinnedSpot as MapPin } from "./types/map";
 
 type TabKey = "map" | "favorites" | "planned";
 
 type AppConfig = {
   appName: string;
   publicGoogleMapsApiKey: string;
+};
+
+type DetailState = {
+  spot: SavedSpot;
+  initialSlotTime?: string | null;
 };
 
 function StarIcon() {
@@ -80,7 +99,7 @@ function TabButton({
   label: string;
   active: boolean;
   onClick: () => void;
-  icon: React.ReactNode;
+  icon: ReactNode;
 }) {
   return (
     <button
@@ -100,8 +119,12 @@ export default function App() {
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [configError, setConfigError] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [selectedFavoriteMapId, setSelectedFavoriteMapId] = useState<string | null>(null);
+  const [detailState, setDetailState] = useState<DetailState | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const { view, setView, pin, setPin, clearPin } = useLocalMapState();
+  const favorites = useFavoritesStore();
+  const planned = usePlannedDivesStore();
 
   useEffect(() => {
     let cancelled = false;
@@ -163,7 +186,113 @@ export default function App() {
 
   const appName = config?.appName ?? "SeaThrough";
 
+  const selectedPinSpot = useMemo(() => (pin ? makeSavedSpotFromMapPin(pin) : null), [pin]);
+  const activeMapFavorite = selectedPinSpot
+    ? findMatchingFavorite(favorites.spots, selectedPinSpot)
+    : undefined;
+
+  const saveFavorite = useCallback(
+    (spot: SavedSpot) => {
+      const existing = findMatchingFavorite(favorites.spots, spot);
+
+      favorites.addOrReplace({
+        ...spot,
+        id: existing?.id ?? spot.id,
+        name: existing?.name ?? spot.name,
+        createdAt: existing?.createdAt ?? spot.createdAt,
+        updatedAt: new Date().toISOString(),
+      });
+    },
+    [favorites],
+  );
+
+  const removeFavorite = useCallback(
+    (spot: SavedSpot) => {
+      const existing = findMatchingFavorite(favorites.spots, spot);
+      if (!existing) return;
+
+      favorites.remove(existing.id);
+      if (selectedFavoriteMapId === existing.id) {
+        setSelectedFavoriteMapId(null);
+      }
+    },
+    [favorites, selectedFavoriteMapId],
+  );
+
+  const toggleFavorite = useCallback(
+    (spot: SavedSpot) => {
+      const existing = findMatchingFavorite(favorites.spots, spot);
+
+      if (existing) {
+        removeFavorite(existing);
+        return;
+      }
+
+      saveFavorite(spot);
+    },
+    [favorites.spots, removeFavorite, saveFavorite],
+  );
+
+  const addPlannedDive = useCallback(
+    (spot: SavedSpot, slotTime: string) => {
+      const matchedFavorite = findMatchingFavorite(favorites.spots, spot);
+      const canonicalSpot = matchedFavorite ?? spot;
+      planned.add(buildPlannedDive(canonicalSpot, slotTime));
+    },
+    [favorites.spots, planned],
+  );
+
+  const openDetail = useCallback((spot: SavedSpot, initialSlotTime?: string | null) => {
+    setDetailState({ spot, initialSlotTime });
+  }, []);
+
+  const handlePinChange = useCallback(
+    (nextPin: MapPin) => {
+      setSelectedFavoriteMapId(null);
+      setPin(nextPin);
+    },
+    [setPin],
+  );
+
+  const renameSelectedPin = useCallback(
+    (nextName: string) => {
+      if (!pin) return;
+
+      setPin({
+        ...pin,
+        label: nextName,
+        updatedAt: Date.now(),
+      });
+    },
+    [pin, setPin],
+  );
+
+  const handleFavoriteSelectOnMap = useCallback(
+    (spot: SavedSpot) => {
+      clearPin();
+      setSelectedFavoriteMapId(spot.id);
+    },
+    [clearPin],
+  );
+
   const renderMainContent = () => {
+    if (detailState) {
+      const detailFavorite = findMatchingFavorite(favorites.spots, detailState.spot);
+      const detailSpot = detailFavorite ?? detailState.spot;
+
+      return (
+        <ForecastDetailScreen
+          spot={detailSpot}
+          initialSlotTime={detailState.initialSlotTime}
+          isFavorite={Boolean(detailFavorite)}
+          plannedDives={planned.dives}
+          onBack={() => setDetailState(null)}
+          onToggleFavorite={() => toggleFavorite(detailSpot)}
+          onPlanDive={(slotTime) => addPlannedDive(detailSpot, slotTime)}
+        />
+      );
+    }
+
     if (tab === "map") {
       return config?.publicGoogleMapsApiKey ? (
         <div className="map-stage">
@@ -172,10 +301,24 @@ export default function App() {
             appName={appName}
             view={view}
             pin={pin}
-            onPinChange={setPin}
+            favorites={favorites.spots}
+            onPinChange={handlePinChange}
             onViewChange={setView}
+            onFavoriteSelect={handleFavoriteSelectOnMap}
             onClearPin={clearPin}
           />
+
+          {selectedPinSpot ? (
+            <div className="map-popup-dock">
+              <MapSpotCard
+                spot={selectedPinSpot}
+                isFavorite={Boolean(activeMapFavorite)}
+                onOpenDetail={() => openDetail(activeMapFavorite ?? selectedPinSpot)}
+                onToggleFavorite={() => toggleFavorite(selectedPinSpot)}
+                onRename={renameSelectedPin}
+              />
+            </div>
+          ) : null}
         </div>
       ) : (
         <div className="placeholder-stage centered-stage">
@@ -195,28 +338,20 @@ export default function App() {
 
     if (tab === "favorites") {
       return (
-        <div className="placeholder-stage centered-stage tab-placeholder-stage">
-          <div className="details-card centered-card">
-            <p className="eyebrow">Favorites</p>
-            <h2>Coming next</h2>
-            <p className="helper-text">
-              Saved pins will live here once the map interaction is locked in.
-            </p>
-          </div>
-        </div>
+        <FavoritesTab
+          favorites={favorites.spots}
+          onOpen={(spot) => openDetail(spot)}
+          onRemove={removeFavorite}
+        />
       );
     }
 
     return (
-      <div className="placeholder-stage centered-stage tab-placeholder-stage">
-        <div className="details-card centered-card">
-          <p className="eyebrow">Planned</p>
-          <h2>Coming next</h2>
-          <p className="helper-text">
-            Planned dives will be created from saved pins after the forecast step.
-          </p>
-        </div>
-      </div>
+      <PlannedTab
+        dives={planned.dives}
+        onOpen={(dive) => openDetail(makeSavedSpotFromPlannedDive(dive), dive.slotTime)}
+        onRemove={(dive) => planned.remove(dive.id)}
+      />
     );
   };
 
@@ -270,26 +405,28 @@ export default function App() {
 
       <main className="app-body ios-body">{renderMainContent()}</main>
 
-      <nav className="tabbar floating-tabbar" aria-label="Primary navigation">
-        <TabButton
-          label="Favorites"
-          active={tab === "favorites"}
-          onClick={() => setTab("favorites")}
-          icon={<StarIcon />}
-        />
-        <TabButton
-          label="Planned"
-          active={tab === "planned"}
-          onClick={() => setTab("planned")}
-          icon={<CalendarIcon />}
-        />
-        <TabButton
-          label="Map"
-          active={tab === "map"}
-          onClick={() => setTab("map")}
-          icon={<MapIcon />}
-        />
-      </nav>
+      {!detailState ? (
+        <nav className="tabbar floating-tabbar" aria-label="Primary navigation">
+          <TabButton
+            label="Favorites"
+            active={tab === "favorites"}
+            onClick={() => setTab("favorites")}
+            icon={<StarIcon />}
+          />
+          <TabButton
+            label="Planned"
+            active={tab === "planned"}
+            onClick={() => setTab("planned")}
+            icon={<CalendarIcon />}
+          />
+          <TabButton
+            label="Map"
+            active={tab === "map"}
+            onClick={() => setTab("map")}
+            icon={<MapIcon />}
+          />
+        </nav>
+      ) : null}
     </div>
   );
 }
