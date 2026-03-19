@@ -223,7 +223,7 @@ function FavoriteMarkers({
         title: spot.name,
         icon: {
           path: googleMaps.SymbolPath.CIRCLE,
-          scale: 11,
+          scale: 12.5,
           fillColor: "#2480ee",
           fillOpacity: 1,
           strokeColor: "#ffffff",
@@ -233,7 +233,7 @@ function FavoriteMarkers({
         label: {
           text: "★",
           color: "#ffffff",
-          fontSize: "11px",
+          fontSize: "13px",
           fontWeight: "700",
         },
       });

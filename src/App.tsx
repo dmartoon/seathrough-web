@@ -187,8 +187,13 @@ export default function App() {
   const appName = config?.appName ?? "SeaThrough";
 
   const selectedPinSpot = useMemo(() => (pin ? makeSavedSpotFromMapPin(pin) : null), [pin]);
-  const activeMapFavorite = selectedPinSpot
-    ? findMatchingFavorite(favorites.spots, selectedPinSpot)
+  const selectedMapFavorite = useMemo(
+    () => favorites.spots.find((spot) => spot.id === selectedFavoriteMapId) ?? null,
+    [favorites.spots, selectedFavoriteMapId],
+  );
+  const activePopupSpot = selectedMapFavorite ?? selectedPinSpot;
+  const activeMapFavorite = activePopupSpot
+    ? findMatchingFavorite(favorites.spots, activePopupSpot)
     : undefined;
 
   const saveFavorite = useCallback(
@@ -246,6 +251,12 @@ export default function App() {
     setDetailState({ spot, initialSlotTime });
   }, []);
 
+  const goToMapHome = useCallback(() => {
+    setDetailState(null);
+    setMenuOpen(false);
+    setTab("map");
+  }, []);
+
   const handlePinChange = useCallback(
     (nextPin: MapPin) => {
       setSelectedFavoriteMapId(null);
@@ -254,8 +265,13 @@ export default function App() {
     [setPin],
   );
 
-  const renameSelectedPin = useCallback(
+  const renameActiveMapSpot = useCallback(
     (nextName: string) => {
+      if (selectedMapFavorite) {
+        favorites.rename(selectedMapFavorite.id, nextName);
+        return;
+      }
+
       if (!pin) return;
 
       setPin({
@@ -263,17 +279,17 @@ export default function App() {
         label: nextName,
         updatedAt: Date.now(),
       });
+
+      if (activeMapFavorite) {
+        favorites.rename(activeMapFavorite.id, nextName);
+      }
     },
-    [pin, setPin],
+    [activeMapFavorite, favorites, pin, selectedMapFavorite, setPin],
   );
 
-  const handleFavoriteSelectOnMap = useCallback(
-    (spot: SavedSpot) => {
-      clearPin();
-      setSelectedFavoriteMapId(spot.id);
-    },
-    [clearPin],
-  );
+  const handleFavoriteSelectOnMap = useCallback((spot: SavedSpot) => {
+    setSelectedFavoriteMapId(spot.id);
+  }, []);
 
   const renderMainContent = () => {
     if (detailState) {
@@ -288,6 +304,27 @@ export default function App() {
           plannedDives={planned.dives}
           onBack={() => setDetailState(null)}
           onToggleFavorite={() => toggleFavorite(detailSpot)}
+          onRename={(nextName) => {
+            const trimmed = nextName.trim();
+            if (!trimmed) return;
+
+            setDetailState((current) =>
+              current
+                ? {
+                    ...current,
+                    spot: {
+                      ...current.spot,
+                      name: trimmed,
+                      updatedAt: new Date().toISOString(),
+                    },
+                  }
+                : current,
+            );
+
+            if (detailFavorite) {
+              favorites.rename(detailFavorite.id, trimmed);
+            }
+          }}
           onPlanDive={(slotTime) => addPlannedDive(detailSpot, slotTime)}
         />
       );
@@ -308,14 +345,14 @@ export default function App() {
             onClearPin={clearPin}
           />
 
-          {selectedPinSpot ? (
+          {activePopupSpot ? (
             <div className="map-popup-dock">
               <MapSpotCard
-                spot={selectedPinSpot}
+                spot={activePopupSpot}
                 isFavorite={Boolean(activeMapFavorite)}
-                onOpenDetail={() => openDetail(activeMapFavorite ?? selectedPinSpot)}
-                onToggleFavorite={() => toggleFavorite(selectedPinSpot)}
-                onRename={renameSelectedPin}
+                onOpenDetail={() => openDetail(activeMapFavorite ?? activePopupSpot)}
+                onToggleFavorite={() => toggleFavorite(activePopupSpot)}
+                onRename={renameActiveMapSpot}
               />
             </div>
           ) : null}
@@ -342,6 +379,7 @@ export default function App() {
           favorites={favorites.spots}
           onOpen={(spot) => openDetail(spot)}
           onRemove={removeFavorite}
+          onRename={(spot, nextName) => favorites.rename(spot.id, nextName)}
         />
       );
     }
@@ -358,10 +396,17 @@ export default function App() {
   return (
     <div className="app-shell ios-shell">
       <header className="brand-header">
-        <div className="brand-lockup">
-          <img src="/assets/app-icon.png" alt="" className="brand-logo" />
-          <span className="brand-name">{appName}</span>
-        </div>
+        <button
+          type="button"
+          className="brand-home-button"
+          onClick={goToMapHome}
+          aria-label={`Go to ${appName} map`}
+        >
+          <span className="brand-lockup">
+            <img src="/assets/app-icon.png" alt="" className="brand-logo" draggable={false} />
+            <span className="brand-name">{appName}</span>
+          </span>
+        </button>
 
         <div className="menu-shell app-menu-shell" ref={menuRef}>
           <button

@@ -1,4 +1,11 @@
-import { useMemo, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type SyntheticEvent,
+} from "react";
 import type { PinnedSpot, PlannedDive } from "../../domain/types";
 import {
   buildCurrentConditions,
@@ -34,14 +41,19 @@ function StarIcon({ active }: { active: boolean }) {
   );
 }
 
-function formatCurrentDate(value: Date) {
-  return new Intl.DateTimeFormat(undefined, {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(value);
+function PencilIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="detail-pencil-icon">
+      <path
+        d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25Z"
+        fill="currentColor"
+      />
+      <path
+        d="M14.06 6.19 16.5 3.75a1.5 1.5 0 0 1 2.12 0l1.63 1.63a1.5 1.5 0 0 1 0 2.12l-2.44 2.44-3.75-3.75Z"
+        fill="currentColor"
+      />
+    </svg>
+  );
 }
 
 type ForecastDetailScreenProps = {
@@ -51,6 +63,7 @@ type ForecastDetailScreenProps = {
   plannedDives: PlannedDive[];
   onBack: () => void;
   onToggleFavorite: () => void;
+  onRename: (nextName: string) => void;
   onPlanDive: (slotTime: string) => void;
 };
 
@@ -61,6 +74,7 @@ export function ForecastDetailScreen({
   plannedDives,
   onBack,
   onToggleFavorite,
+  onRename,
   onPlanDive,
 }: ForecastDetailScreenProps) {
   const days = useMemo(() => buildForecastDays(new Date(), 10), []);
@@ -72,6 +86,9 @@ export function ForecastDetailScreen({
     return foundIndex >= 0 ? foundIndex : 0;
   }, [days, initialSlotTime]);
   const [selectedDayIndex, setSelectedDayIndex] = useState(initialDayIndex);
+  const [titleDraft, setTitleDraft] = useState(spot.name);
+  const [isRenaming, setIsRenaming] = useState(false);
+  const titleInputRef = useRef<HTMLInputElement | null>(null);
 
   const selectedDay = days[selectedDayIndex] ?? days[0];
   const conditions = useMemo(() => buildCurrentConditions(spot), [spot]);
@@ -79,6 +96,22 @@ export function ForecastDetailScreen({
     () => buildHourlyForecastRows(spot, selectedDay.date, initialSlotTime),
     [spot, selectedDay, initialSlotTime],
   );
+
+  useEffect(() => {
+    setTitleDraft(spot.name);
+    setIsRenaming(false);
+  }, [spot.name]);
+
+  useEffect(() => {
+    if (!isRenaming) return;
+
+    const frame = window.requestAnimationFrame(() => {
+      titleInputRef.current?.focus();
+      titleInputRef.current?.select();
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [isRenaming]);
 
   const plannedTimes = useMemo(
     () =>
@@ -90,140 +123,261 @@ export function ForecastDetailScreen({
     [plannedDives, spot.id],
   );
 
+  const stop = (event: SyntheticEvent) => {
+    event.stopPropagation();
+  };
+
+  const commitTitle = () => {
+    const trimmed = titleDraft.trim();
+    const nextName = trimmed || "Dropped pin";
+
+    if (nextName !== spot.name) {
+      onRename(nextName);
+    }
+
+    setTitleDraft(nextName);
+    setIsRenaming(false);
+  };
+
+  const cancelRename = () => {
+    setTitleDraft(spot.name);
+    setIsRenaming(false);
+  };
+
   return (
     <section className="forecast-detail-shell">
       <div className="forecast-detail-scroll">
-        <header className="forecast-detail-hero">
-          <div className="forecast-detail-topbar">
-            <button
-              type="button"
-              className="detail-circle-button"
-              onClick={onBack}
-              aria-label="Back"
-            >
-              <BackIcon />
-            </button>
+        <div className="forecast-detail-stage">
+          <header className="forecast-detail-hero">
+            <div className="forecast-detail-topbar">
+              <button
+                type="button"
+                className="detail-circle-button"
+                onClick={onBack}
+                aria-label="Back"
+              >
+                <BackIcon />
+              </button>
 
-            <div className="forecast-detail-title-wrap">
-              <h1>{spot.name}</h1>
-              <p>{formatCurrentDate(new Date())}</p>
-            </div>
+              <div className="forecast-detail-title-wrap">
+                <h1
+                  className={
+                    isRenaming
+                      ? "forecast-detail-title is-hidden"
+                      : "forecast-detail-title"
+                  }
+                >
+                  {spot.name}
+                </h1>
+                <input
+                  ref={titleInputRef}
+                  className={
+                    isRenaming
+                      ? "forecast-detail-title-input is-visible"
+                      : "forecast-detail-title-input"
+                  }
+                  type="text"
+                  value={titleDraft}
+                  onClick={stop}
+                  onPointerDown={stop}
+                  onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                    setTitleDraft(event.target.value)
+                  }
+                  onBlur={commitTitle}
+                  onKeyDown={(event) => {
+                    event.stopPropagation();
 
-            <button
-              type="button"
-              className={isFavorite ? "detail-circle-button active" : "detail-circle-button"}
-              onClick={onToggleFavorite}
-              aria-label={isFavorite ? "Remove favorite" : "Add favorite"}
-            >
-              <StarIcon active={isFavorite} />
-            </button>
-          </div>
-        </header>
+                    if (event.key === "Enter") {
+                      commitTitle();
+                      event.currentTarget.blur();
+                    }
 
-        <div className="forecast-detail-content">
-          <section className="forecast-section-card">
-            <div className="forecast-section-heading">
-              <div>
-                <h2>Current Conditions</h2>
-                <p>{conditions.buoyLabel}</p>
+                    if (event.key === "Escape") {
+                      cancelRename();
+                      event.currentTarget.blur();
+                    }
+                  }}
+                  aria-label="Favorite name"
+                  placeholder="Dropped pin"
+                  tabIndex={isRenaming ? 0 : -1}
+                />
               </div>
-              <div className="forecast-clarity-pill">
-                <span>{conditions.clarityLabel}</span>
-                <strong>{conditions.clarityRange}</strong>
-              </div>
-            </div>
 
-            <div className="forecast-current-grid">
-              <div>
-                <span>Wave</span>
-                <strong>{conditions.waveHeightFt.toFixed(1)} ft @ {conditions.wavePeriodSec.toFixed(0)}s</strong>
-              </div>
-              <div>
-                <span>Tide</span>
-                <strong>{conditions.tideDirection} {conditions.tideHeightFt.toFixed(1)} ft</strong>
-              </div>
-              <div>
-                <span>Wind</span>
-                <strong>{conditions.windDirection} {conditions.windSpeedKt.toFixed(0)} kt</strong>
-              </div>
-              <div>
-                <span>Water</span>
-                <strong>{conditions.waterTempF.toFixed(0)}°F</strong>
-              </div>
-            </div>
-          </section>
-
-          <section className="forecast-section-card">
-            <div className="forecast-section-heading compact">
-              <div>
-                <h2>Forecast</h2>
-                <p>Placeholder values mapped to this location for UI work.</p>
-              </div>
-            </div>
-
-            <div className="forecast-day-strip" role="tablist" aria-label="Forecast days">
-              {days.map((day, index) => (
+              <div className="forecast-detail-topbar-actions">
                 <button
-                  key={day.key}
                   type="button"
                   className={
-                    index === selectedDayIndex ? "forecast-day-pill active" : "forecast-day-pill"
+                    isRenaming
+                      ? "detail-circle-button detail-rename-button active"
+                      : "detail-circle-button detail-rename-button"
                   }
-                  onClick={() => setSelectedDayIndex(index)}
-                  role="tab"
-                  aria-selected={index === selectedDayIndex}
+                  onClick={(event) => {
+                    stop(event);
+
+                    if (isRenaming) {
+                      commitTitle();
+                      return;
+                    }
+
+                    setIsRenaming(true);
+                  }}
+                  aria-label="Rename favorite"
+                  title="Rename favorite"
                 >
-                  {day.label}
+                  <PencilIcon />
                 </button>
-              ))}
-            </div>
 
-            <div className="forecast-hourly-table-wrap">
-              <div className="forecast-hourly-header">
-                <span>Time</span>
-                <span>Wave</span>
-                <span>Tide</span>
-                <span>Clarity</span>
-                <span>Plan</span>
+                <button
+                  type="button"
+                  className={
+                    isFavorite
+                      ? "detail-circle-button active"
+                      : "detail-circle-button"
+                  }
+                  onClick={onToggleFavorite}
+                  aria-label={isFavorite ? "Remove favorite" : "Add favorite"}
+                >
+                  <StarIcon active={isFavorite} />
+                </button>
               </div>
+            </div>
+          </header>
 
-              <div className="forecast-hourly-rows">
-                {rows.map((row) => {
-                  const isPlanned = plannedTimes.has(new Date(row.timeIso).getTime());
-                  const isInitial = initialSlotTime
-                    ? new Date(initialSlotTime).getTime() === new Date(row.timeIso).getTime()
-                    : false;
+          <div className="forecast-detail-content">
+            <div className="forecast-detail-content-inner">
+              <section className="forecast-section-card">
+                <div className="forecast-section-heading">
+                  <div>
+                    <h2>Current Conditions</h2>
+                    <p>{conditions.buoyLabel}</p>
+                  </div>
+                  <div className="forecast-clarity-pill">
+                    <span>{conditions.clarityLabel}</span>
+                    <strong>{conditions.clarityRange}</strong>
+                  </div>
+                </div>
 
-                  return (
-                    <div
-                      key={row.id}
-                      className={isInitial ? "forecast-hourly-row active" : "forecast-hourly-row"}
+                <div className="forecast-current-grid">
+                  <div>
+                    <span>Wave</span>
+                    <strong>
+                      {conditions.waveHeightFt.toFixed(1)} ft @{" "}
+                      {conditions.wavePeriodSec.toFixed(0)}s
+                    </strong>
+                  </div>
+                  <div>
+                    <span>Tide</span>
+                    <strong>
+                      {conditions.tideDirection}{" "}
+                      {conditions.tideHeightFt.toFixed(1)} ft
+                    </strong>
+                  </div>
+                  <div>
+                    <span>Wind</span>
+                    <strong>
+                      {conditions.windDirection}{" "}
+                      {conditions.windSpeedKt.toFixed(0)} kt
+                    </strong>
+                  </div>
+                  <div>
+                    <span>Water</span>
+                    <strong>{conditions.waterTempF.toFixed(0)}°F</strong>
+                  </div>
+                </div>
+              </section>
+
+              <section className="forecast-section-card">
+                <div className="forecast-section-heading compact">
+                  <div>
+                    <h2>Forecast</h2>
+                    <p>
+                      Placeholder values mapped to this location for UI work.
+                    </p>
+                  </div>
+                </div>
+
+                <div
+                  className="forecast-day-strip"
+                  role="tablist"
+                  aria-label="Forecast days"
+                >
+                  {days.map((day, index) => (
+                    <button
+                      key={day.key}
+                      type="button"
+                      className={
+                        index === selectedDayIndex
+                          ? "forecast-day-pill active"
+                          : "forecast-day-pill"
+                      }
+                      onClick={() => setSelectedDayIndex(index)}
+                      role="tab"
+                      aria-selected={index === selectedDayIndex}
                     >
-                      <span>{row.hourLabel}</span>
-                      <span>{row.waveText}</span>
-                      <span>
-                        {row.tideText} <em>{row.tideDirection}</em>
-                      </span>
-                      <span className="forecast-row-clarity">
-                        <strong>{row.clarityText}</strong>
-                        <small>{row.clarityLabel}</small>
-                      </span>
-                      <span>
-                        <button
-                          type="button"
-                          className={isPlanned ? "table-plan-button active" : "table-plan-button"}
-                          onClick={() => onPlanDive(row.timeIso)}
-                          disabled={isPlanned}
+                      {day.label}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="forecast-hourly-table-wrap">
+                  <div className="forecast-hourly-header">
+                    <span>Time</span>
+                    <span>Wave</span>
+                    <span>Tide</span>
+                    <span>Clarity</span>
+                    <span>Plan</span>
+                  </div>
+
+                  <div className="forecast-hourly-rows">
+                    {rows.map((row) => {
+                      const isPlanned = plannedTimes.has(
+                        new Date(row.timeIso).getTime(),
+                      );
+                      const isInitial = initialSlotTime
+                        ? new Date(initialSlotTime).getTime() ===
+                          new Date(row.timeIso).getTime()
+                        : false;
+
+                      return (
+                        <div
+                          key={row.id}
+                          className={
+                            isInitial
+                              ? "forecast-hourly-row active"
+                              : "forecast-hourly-row"
+                          }
                         >
-                          {isPlanned ? "Saved" : "Plan"}
-                        </button>
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
+                          <span>{row.hourLabel}</span>
+                          <span>{row.waveText}</span>
+                          <span>
+                            {row.tideText} <em>{row.tideDirection}</em>
+                          </span>
+                          <span className="forecast-row-clarity">
+                            <strong>{row.clarityText}</strong>
+                            <small>{row.clarityLabel}</small>
+                          </span>
+                          <span>
+                            <button
+                              type="button"
+                              className={
+                                isPlanned
+                                  ? "table-plan-button active"
+                                  : "table-plan-button"
+                              }
+                              onClick={() => onPlanDive(row.timeIso)}
+                              disabled={isPlanned}
+                            >
+                              {isPlanned ? "Saved" : "Plan"}
+                            </button>
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </section>
             </div>
-          </section>
+          </div>
         </div>
       </div>
     </section>
