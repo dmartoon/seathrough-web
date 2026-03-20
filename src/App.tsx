@@ -12,6 +12,7 @@ import type { PinnedSpot as SavedSpot } from "./domain/types";
 import { FavoritesTab } from "./features/favorites/FavoritesTab";
 import { ForecastDetailScreen } from "./features/forecast/ForecastDetailScreen";
 import { PlannedTab } from "./features/planned/PlannedTab";
+import { SafetyNoticeScreen } from "./features/safety/SafetyNoticeScreen";
 import { useLocalMapState } from "./hooks/useLocalMapState";
 import { useFavoritesStore } from "./stores/useFavoritesStore";
 import { usePlannedDivesStore } from "./stores/usePlannedDivesStore";
@@ -28,6 +29,8 @@ type DetailState = {
   spot: SavedSpot;
   initialSlotTime?: string | null;
 };
+
+const SAFETY_NOTICE_STORAGE_KEY = "st_hasSeenSafetyDisclaimer";
 
 function StarIcon() {
   return (
@@ -121,6 +124,8 @@ export default function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [selectedFavoriteMapId, setSelectedFavoriteMapId] = useState<string | null>(null);
   const [detailState, setDetailState] = useState<DetailState | null>(null);
+  const [safetyPageOpen, setSafetyPageOpen] = useState(false);
+  const [hasSeenSafetyNotice, setHasSeenSafetyNotice] = useState<boolean | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const { view, setView, pin, setPin, clearPin } = useLocalMapState();
   const favorites = useFavoritesStore();
@@ -161,6 +166,14 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    try {
+      setHasSeenSafetyNotice(window.localStorage.getItem(SAFETY_NOTICE_STORAGE_KEY) === "true");
+    } catch {
+      setHasSeenSafetyNotice(true);
+    }
+  }, []);
+
+  useEffect(() => {
     if (!menuOpen) return;
 
     const handlePointerDown = (event: PointerEvent) => {
@@ -185,6 +198,18 @@ export default function App() {
   }, [menuOpen]);
 
   const appName = config?.appName ?? "SeaThrough";
+  const showSafetyNoticeGate = hasSeenSafetyNotice === false;
+  const showEmptyMapLongPressHint = tab === "map" && !pin && favorites.spots.length === 0;
+
+  const acknowledgeSafetyNotice = useCallback(() => {
+    try {
+      window.localStorage.setItem(SAFETY_NOTICE_STORAGE_KEY, "true");
+    } catch {
+      // ignore storage write failures
+    }
+
+    setHasSeenSafetyNotice(true);
+  }, []);
 
   const selectedPinSpot = useMemo(() => (pin ? makeSavedSpotFromMapPin(pin) : null), [pin]);
   const selectedMapFavorite = useMemo(
@@ -238,21 +263,42 @@ export default function App() {
     [favorites.spots, removeFavorite, saveFavorite],
   );
 
-  const addPlannedDive = useCallback(
+  const togglePlannedDive = useCallback(
     (spot: SavedSpot, slotTime: string) => {
       const matchedFavorite = findMatchingFavorite(favorites.spots, spot);
       const canonicalSpot = matchedFavorite ?? spot;
+      const existing = planned.dives.find(
+        (dive) =>
+          dive.spotId === canonicalSpot.id &&
+          new Date(dive.slotTime).getTime() === new Date(slotTime).getTime(),
+      );
+
+      if (existing) {
+        planned.remove(existing.id);
+        return;
+      }
+
       planned.add(buildPlannedDive(canonicalSpot, slotTime));
     },
     [favorites.spots, planned],
   );
 
+  const renameSpotEverywhere = useCallback(
+    (spotId: string, nextName: string) => {
+      favorites.rename(spotId, nextName);
+      planned.renameSpot(spotId, nextName);
+    },
+    [favorites, planned],
+  );
+
   const openDetail = useCallback((spot: SavedSpot, initialSlotTime?: string | null) => {
+    setSafetyPageOpen(false);
     setDetailState({ spot, initialSlotTime });
   }, []);
 
   const goToMapHome = useCallback(() => {
     setDetailState(null);
+    setSafetyPageOpen(false);
     setMenuOpen(false);
     setTab("map");
   }, []);
@@ -268,7 +314,7 @@ export default function App() {
   const renameActiveMapSpot = useCallback(
     (nextName: string) => {
       if (selectedMapFavorite) {
-        favorites.rename(selectedMapFavorite.id, nextName);
+        renameSpotEverywhere(selectedMapFavorite.id, nextName);
         return;
       }
 
@@ -279,12 +325,13 @@ export default function App() {
         label: nextName,
         updatedAt: Date.now(),
       });
+      planned.renameSpot(pin.id, nextName);
 
       if (activeMapFavorite) {
-        favorites.rename(activeMapFavorite.id, nextName);
+        renameSpotEverywhere(activeMapFavorite.id, nextName);
       }
     },
-    [activeMapFavorite, favorites, pin, selectedMapFavorite, setPin],
+    [activeMapFavorite, pin, planned, renameSpotEverywhere, selectedMapFavorite, setPin],
   );
 
   const handleFavoriteSelectOnMap = useCallback((spot: SavedSpot) => {
@@ -321,11 +368,20 @@ export default function App() {
                 : current,
             );
 
-            if (detailFavorite) {
-              favorites.rename(detailFavorite.id, trimmed);
-            }
+            renameSpotEverywhere(detailSpot.id, trimmed);
           }}
-          onPlanDive={(slotTime) => addPlannedDive(detailSpot, slotTime)}
+          onTogglePlanDive={(slotTime) => togglePlannedDive(detailSpot, slotTime)}
+        />
+      );
+    }
+
+    if (safetyPageOpen) {
+      return (
+        <SafetyNoticeScreen
+          onAcknowledge={() => {
+            acknowledgeSafetyNotice();
+            setSafetyPageOpen(false);
+          }}
         />
       );
     }
@@ -343,6 +399,11 @@ export default function App() {
             onViewChange={setView}
             onFavoriteSelect={handleFavoriteSelectOnMap}
             onClearPin={clearPin}
+            onMapBackgroundClick={() => {
+              if (selectedFavoriteMapId) {
+                setSelectedFavoriteMapId(null);
+              }
+            }}
           />
 
           {activePopupSpot ? (
@@ -354,6 +415,12 @@ export default function App() {
                 onToggleFavorite={() => toggleFavorite(activePopupSpot)}
                 onRename={renameActiveMapSpot}
               />
+            </div>
+          ) : null}
+
+          {showEmptyMapLongPressHint ? (
+            <div className="map-empty-hint" aria-live="polite">
+              <div className="map-empty-hint-card">Long press anywhere on the map to drop a pin.</div>
             </div>
           ) : null}
         </div>
@@ -379,7 +446,7 @@ export default function App() {
           favorites={favorites.spots}
           onOpen={(spot) => openDetail(spot)}
           onRemove={removeFavorite}
-          onRename={(spot, nextName) => favorites.rename(spot.id, nextName)}
+          onRename={(spot, nextName) => renameSpotEverywhere(spot.id, nextName)}
         />
       );
     }
@@ -395,62 +462,84 @@ export default function App() {
 
   return (
     <div className="app-shell ios-shell">
-      <header className="brand-header">
-        <button
-          type="button"
-          className="brand-home-button"
-          onClick={goToMapHome}
-          aria-label={`Go to ${appName} map`}
-        >
-          <span className="brand-lockup">
-            <img src="/assets/app-icon.png" alt="" className="brand-logo" draggable={false} />
-            <span className="brand-name">{appName}</span>
-          </span>
-        </button>
-
-        <div className="menu-shell app-menu-shell" ref={menuRef}>
+      {!safetyPageOpen ? (
+        <header className="brand-header">
           <button
-            className={menuOpen ? "map-circle-button active" : "map-circle-button"}
             type="button"
-            aria-label="Open menu"
-            aria-haspopup="menu"
-            aria-expanded={menuOpen}
-            onClick={() => setMenuOpen((current) => !current)}
-            title="Menu"
+            className="brand-home-button"
+            onClick={goToMapHome}
+            aria-label={`Go to ${appName} map`}
           >
-            <MenuIcon />
+            <span className="brand-lockup">
+              <img src="/assets/app-icon.png" alt="" className="brand-logo" draggable={false} />
+              <span className="brand-name">{appName}</span>
+            </span>
           </button>
 
-          {menuOpen ? (
-            <div className="menu-popover" role="menu" aria-label={`${appName} menu`}>
-              <a
-                className="menu-link"
-                href="https://www.seathrough.app/privacy/"
-                target="_blank"
-                rel="noreferrer"
-                role="menuitem"
-                onClick={() => setMenuOpen(false)}
-              >
-                Privacy Policy
-              </a>
-              <a
-                className="menu-link primary"
-                href="https://apps.apple.com/ca/app/seathrough/id6758314434"
-                target="_blank"
-                rel="noreferrer"
-                role="menuitem"
-                onClick={() => setMenuOpen(false)}
-              >
-                Download iOS App
-              </a>
-            </div>
-          ) : null}
-        </div>
-      </header>
+          <div className="menu-shell app-menu-shell" ref={menuRef}>
+            <button
+              className={menuOpen ? "map-circle-button active" : "map-circle-button"}
+              type="button"
+              aria-label="Open menu"
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+              onClick={() => setMenuOpen((current) => !current)}
+              title="Menu"
+            >
+              <MenuIcon />
+            </button>
+
+            {menuOpen ? (
+              <div className="menu-popover" role="menu" aria-label={`${appName} menu`}>
+                <button
+                  type="button"
+                  className="menu-link menu-link-button"
+                  role="menuitem"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setDetailState(null);
+                    setSafetyPageOpen(true);
+                  }}
+                >
+                  Safety Notice
+                </button>
+                <a
+                  className="menu-link"
+                  href="mailto:support@seathrough.app?subject=SeaThrough%20Feedback"
+                  role="menuitem"
+                  onClick={() => setMenuOpen(false)}
+                >
+                  Contact
+                </a>
+                <a
+                  className="menu-link"
+                  href="https://www.seathrough.app/privacy/"
+                  target="_blank"
+                  rel="noreferrer"
+                  role="menuitem"
+                  onClick={() => setMenuOpen(false)}
+                >
+                  Privacy Policy
+                </a>
+                <a
+                  className="menu-link primary"
+                  href="https://apps.apple.com/ca/app/seathrough/id6758314434"
+                  target="_blank"
+                  rel="noreferrer"
+                  role="menuitem"
+                  onClick={() => setMenuOpen(false)}
+                >
+                  Download iOS App
+                </a>
+              </div>
+            ) : null}
+          </div>
+        </header>
+      ) : null}
 
       <main className="app-body ios-body">{renderMainContent()}</main>
 
-      {!detailState ? (
+      {!detailState && !safetyPageOpen ? (
         <nav className="tabbar floating-tabbar" aria-label="Primary navigation">
           <TabButton
             label="Favorites"
@@ -471,6 +560,10 @@ export default function App() {
             icon={<MapIcon />}
           />
         </nav>
+      ) : null}
+
+      {showSafetyNoticeGate ? (
+        <SafetyNoticeScreen inModal onAcknowledge={acknowledgeSafetyNotice} />
       ) : null}
     </div>
   );

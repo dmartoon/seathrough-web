@@ -61,10 +61,27 @@ export function usePlannedDivesStore() {
       setDives((current) => current.filter((item) => item.id !== id));
     };
 
+    const renameSpot = (spotId: string, nextName: string) => {
+      const trimmed = nextName.trim();
+      if (!trimmed) return;
+
+      setDives((current) =>
+        current.map((item) =>
+          item.spotId === spotId
+            ? {
+                ...item,
+                spotName: trimmed,
+              }
+            : item,
+        ),
+      );
+    };
+
     return {
       dives,
       add,
       remove,
+      renameSpot,
     };
   }, [dives, setDives]);
 }

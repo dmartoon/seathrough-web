@@ -13,6 +13,7 @@ type PinMapProps = {
   onViewChange: (view: MapViewState) => void;
   onFavoriteSelect: (spot: SavedSpot) => void;
   onClearPin: () => void;
+  onMapBackgroundClick?: () => void;
 };
 
 type MapMode = "roadmap" | "hybrid";
@@ -451,6 +452,7 @@ export function PinMap({
   onViewChange,
   onFavoriteSelect,
   onClearPin,
+  onMapBackgroundClick,
 }: PinMapProps) {
   const [mapMode, setMapMode] = useState<MapMode>("roadmap");
   const mapCanvasRef = useRef<HTMLDivElement | null>(null);
@@ -623,6 +625,9 @@ export function PinMap({
             if (!center || typeof zoom !== "number") return;
 
             onViewChange({ center, zoom });
+          }}
+          onClick={() => {
+            onMapBackgroundClick?.();
           }}
         />
 

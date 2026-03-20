@@ -30,6 +30,107 @@ function PencilIcon() {
   );
 }
 
+function WaveIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="map-spot-card-metric-icon-svg">
+      <path
+        d="M3 10.5c1.5 0 1.5-2 3-2s1.5 2 3 2 1.5-2 3-2 1.5 2 3 2 1.5-2 3-2"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.9"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M3 15.5c1.5 0 1.5-2 3-2s1.5 2 3 2 1.5-2 3-2 1.5 2 3 2 1.5-2 3-2"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.9"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function TideIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="map-spot-card-metric-icon-svg">
+      <path
+        d="M12 4v16M8.7 7.3 12 4l3.3 3.3M8.7 16.7 12 20l3.3-3.3"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.9"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function WindIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="map-spot-card-metric-icon-svg">
+      <path
+        d="M4 9.5h10.5a2.5 2.5 0 1 0-2.5-2.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.9"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M4 14h13.5a2.5 2.5 0 1 1-2.5 2.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.9"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function WaterIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="map-spot-card-metric-icon-svg">
+      <path
+        d="M12 3.5c-2.5 3.3-4.8 6-4.8 9A4.8 4.8 0 0 0 12 17.3a4.8 4.8 0 0 0 4.8-4.8c0-3-2.3-5.7-4.8-9Z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.9"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M9.6 12.6c0 1.2 1 2.2 2.2 2.2"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.9"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+
+type MetricType = "wave" | "tide" | "wind" | "water";
+
+function metricIconFor(type: MetricType) {
+  switch (type) {
+    case "wave":
+      return <WaveIcon />;
+    case "tide":
+      return <TideIcon />;
+    case "wind":
+      return <WindIcon />;
+    case "water":
+      return <WaterIcon />;
+    default:
+      return null;
+  }
+}
+
 type MapSpotCardProps = {
   spot: PinnedSpot;
   isFavorite: boolean;
@@ -152,18 +253,35 @@ export function MapSpotCard({
           <span className="map-spot-card-source">Using NOAA buoy 46222</span>
 
           <div className="map-spot-card-rows">
-            <p>
-              Wave: <strong>{conditions.waveHeightFt.toFixed(1)} ft @ {conditions.wavePeriodSec.toFixed(0)}s</strong>
-            </p>
-            <p>
-              Tide: <strong>{conditions.tideDirection} {conditions.tideHeightFt.toFixed(1)} ft</strong>
-            </p>
-            <p>
-              Wind: <strong>{conditions.windDirection} {conditions.windSpeedKt.toFixed(0)} kt</strong>
-            </p>
-            <p>
-              Water: <strong>{conditions.waterTempF.toFixed(0)}°F</strong>
-            </p>
+            {[
+              {
+                icon: "wave" as const,
+                label: "Wave:",
+                value: `${conditions.waveHeightFt.toFixed(1)} ft @ ${conditions.wavePeriodSec.toFixed(0)}s`,
+              },
+              {
+                icon: "tide" as const,
+                label: "Tide:",
+                value: `${conditions.tideDirection} ${conditions.tideHeightFt.toFixed(1)} ft`,
+              },
+              {
+                icon: "wind" as const,
+                label: "Wind:",
+                value: `${conditions.windDirection} ${conditions.windSpeedKt.toFixed(0)} kt`,
+              },
+              {
+                icon: "water" as const,
+                label: "Water:",
+                value: `${conditions.waterTempF.toFixed(0)}°F`,
+              },
+            ].map((item) => (
+              <div key={item.icon} className="map-spot-card-metric-row">
+                <span className="map-spot-card-metric-icon">{metricIconFor(item.icon)}</span>
+                <span className="map-spot-card-metric-text">
+                  {item.label} <strong>{item.value}</strong>
+                </span>
+              </div>
+            ))}
           </div>
         </div>
 
@@ -182,7 +300,9 @@ export function MapSpotCard({
           </button>
 
           <div className="map-spot-card-clarity">
-            <span>Water Clarity</span>
+            <div className="map-spot-card-clarity-label">
+              <span>Water Clarity</span>
+            </div>
             <strong>{conditions.clarityRange}</strong>
           </div>
 

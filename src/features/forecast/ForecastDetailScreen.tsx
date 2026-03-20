@@ -4,6 +4,7 @@ import {
   useRef,
   useState,
   type ChangeEvent,
+  type ReactNode,
   type SyntheticEvent,
 } from "react";
 import type { PinnedSpot, PlannedDive } from "../../domain/types";
@@ -56,6 +57,90 @@ function PencilIcon() {
   );
 }
 
+function WaveIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="forecast-metric-icon-svg">
+      <path
+        d="M3 10.5c1.5 0 1.5-2 3-2s1.5 2 3 2 1.5-2 3-2 1.5 2 3 2 1.5-2 3-2"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.9"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M3 15.5c1.5 0 1.5-2 3-2s1.5 2 3 2 1.5-2 3-2 1.5 2 3 2 1.5-2 3-2"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.9"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function TideIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="forecast-metric-icon-svg">
+      <path
+        d="M12 4v16M8.7 7.3 12 4l3.3 3.3M8.7 16.7 12 20l3.3-3.3"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.9"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function WindIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="forecast-metric-icon-svg">
+      <path
+        d="M4 9.5h10.5a2.5 2.5 0 1 0-2.5-2.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.9"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M4 14h13.5a2.5 2.5 0 1 1-2.5 2.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.9"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function WaterIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="forecast-metric-icon-svg">
+      <path
+        d="M12 3.5c-2.5 3.3-4.8 6-4.8 9A4.8 4.8 0 0 0 12 17.3a4.8 4.8 0 0 0 4.8-4.8c0-3-2.3-5.7-4.8-9Z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.9"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M9.6 12.6c0 1.2 1 2.2 2.2 2.2"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.9"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+
 type ForecastDetailScreenProps = {
   spot: PinnedSpot;
   initialSlotTime?: string | null;
@@ -64,8 +149,190 @@ type ForecastDetailScreenProps = {
   onBack: () => void;
   onToggleFavorite: () => void;
   onRename: (nextName: string) => void;
-  onPlanDive: (slotTime: string) => void;
+  onTogglePlanDive: (slotTime: string) => void;
 };
+
+type MetricItem = {
+  icon: "wave" | "tide" | "wind" | "water";
+  label: string;
+  value: string;
+};
+
+const WEEKDAY_SHORT = new Intl.DateTimeFormat(undefined, { weekday: "short" });
+const MONTH_DAY = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" });
+const TIME_ONLY = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
+
+function stopPropagation(event: SyntheticEvent) {
+  event.stopPropagation();
+}
+
+function toDayKey(value: Date | string) {
+  return new Date(value).toISOString().slice(0, 10);
+}
+
+function getDayPrimaryLabel(date: Date, index: number) {
+  return index === 0 ? "Today" : WEEKDAY_SHORT.format(date);
+}
+
+function cardinalToDegrees(direction: string) {
+  const normalized = direction.trim().toUpperCase();
+  const mapping: Record<string, number> = {
+    N: 0,
+    NNE: 22.5,
+    NE: 45,
+    ENE: 67.5,
+    E: 90,
+    ESE: 112.5,
+    SE: 135,
+    SSE: 157.5,
+    S: 180,
+    SSW: 202.5,
+    SW: 225,
+    WSW: 247.5,
+    W: 270,
+    WNW: 292.5,
+    NW: 315,
+    NNW: 337.5,
+  };
+
+  return mapping[normalized] ?? null;
+}
+
+function angularDifference(a: number, b: number) {
+  const diff = Math.abs(a - b) % 360;
+  return diff > 180 ? 360 - diff : diff;
+}
+
+function windRelationToShore(direction: string, shoreDirection: number) {
+  const windDegrees = cardinalToDegrees(direction);
+
+  if (windDegrees === null) {
+    return "Cross-shore";
+  }
+
+  const diff = angularDifference(windDegrees, shoreDirection);
+
+  if (diff <= 45) return "Onshore";
+  if (diff >= 135) return "Offshore";
+  return "Cross-shore";
+}
+
+function clarityRangeFromFeet(value: number) {
+  const lower = Math.max(2, Math.round(value / 5) * 5 - 2);
+  const upper = Math.max(lower + 5, lower + 5);
+  return `${lower}-${upper} ft`;
+}
+
+function clarityTone(ft: number) {
+  if (ft >= 18) return "excellent";
+  if (ft >= 13) return "good";
+  if (ft >= 8) return "fair";
+  return "poor";
+}
+
+function createSunTimes(date: Date, latitude: number) {
+  const start = new Date(date);
+  start.setHours(0, 0, 0, 0);
+
+  const dayOfYear = Math.floor(
+    (Date.UTC(start.getFullYear(), start.getMonth(), start.getDate()) -
+      Date.UTC(start.getFullYear(), 0, 0)) /
+      86400000,
+  );
+  const latitudeFactor = Math.min(1.08, Math.max(0.45, Math.abs(latitude) / 40));
+  const seasonal = Math.sin(((dayOfYear - 80) / 365) * Math.PI * 2);
+  const daylightHours = 12 + seasonal * 2.9 * latitudeFactor;
+  const solarNoon = 12.02;
+  const sunriseHour = solarNoon - daylightHours / 2;
+  const sunsetHour = solarNoon + daylightHours / 2;
+
+  const sunrise = new Date(start);
+  sunrise.setMinutes(Math.round(sunriseHour * 60));
+
+  const sunset = new Date(start);
+  sunset.setMinutes(Math.round(sunsetHour * 60));
+
+  return {
+    sunriseLabel: TIME_ONLY.format(sunrise),
+    sunsetLabel: TIME_ONLY.format(sunset),
+  };
+}
+
+function metricIconFor(type: MetricItem["icon"]): ReactNode {
+  switch (type) {
+    case "wave":
+      return <WaveIcon />;
+    case "tide":
+      return <TideIcon />;
+    case "wind":
+      return <WindIcon />;
+    case "water":
+      return <WaterIcon />;
+    default:
+      return null;
+  }
+}
+
+function ForecastMetricRow({ item }: { item: MetricItem }) {
+  return (
+    <div className="forecast-metric-row">
+      <span className="forecast-metric-icon">{metricIconFor(item.icon)}</span>
+      <span className="forecast-metric-text">
+        {item.label} <strong>{item.value}</strong>
+      </span>
+    </div>
+  );
+}
+
+function ForecastSummaryCard({
+  title,
+  subtitle,
+  metrics,
+  clarityLabel,
+  clarityValue,
+  action,
+}: {
+  title: string;
+  subtitle: string;
+  metrics: MetricItem[];
+  clarityLabel: string;
+  clarityValue: string;
+  action?: ReactNode;
+}) {
+  return (
+    <section className="forecast-summary-block">
+      <div className="forecast-summary-heading">
+        <h2>{title}</h2>
+        <p>{subtitle}</p>
+      </div>
+
+      <div className="forecast-summary-card">
+        <div className="forecast-summary-body">
+          <div className="forecast-summary-metrics">
+            {metrics.map((item) => (
+              <ForecastMetricRow key={`${item.icon}-${item.label}-${item.value}`} item={item} />
+            ))}
+          </div>
+
+          <div className="forecast-summary-side">
+            <div className="forecast-summary-clarity-label">
+              <span>{clarityLabel}</span>
+            </div>
+            <strong>{clarityValue}</strong>
+          </div>
+        </div>
+
+        {action ? <div className="forecast-summary-actions">{action}</div> : null}
+      </div>
+    </section>
+  );
+}
+
+function ClarityChip({ text, feet }: { text: string; feet: number }) {
+  return (
+    <span className={`forecast-clarity-chip ${clarityTone(feet)}`}>{text}</span>
+  );
+}
 
 export function ForecastDetailScreen({
   spot,
@@ -75,23 +342,24 @@ export function ForecastDetailScreen({
   onBack,
   onToggleFavorite,
   onRename,
-  onPlanDive,
+  onTogglePlanDive,
 }: ForecastDetailScreenProps) {
   const days = useMemo(() => buildForecastDays(new Date(), 10), []);
   const initialDayIndex = useMemo(() => {
     if (!initialSlotTime) return 0;
 
-    const targetKey = new Date(initialSlotTime).toISOString().slice(0, 10);
+    const targetKey = toDayKey(initialSlotTime);
     const foundIndex = days.findIndex((day) => day.key === targetKey);
     return foundIndex >= 0 ? foundIndex : 0;
   }, [days, initialSlotTime]);
+
   const [selectedDayIndex, setSelectedDayIndex] = useState(initialDayIndex);
   const [titleDraft, setTitleDraft] = useState(spot.name);
   const [isRenaming, setIsRenaming] = useState(false);
   const titleInputRef = useRef<HTMLInputElement | null>(null);
 
   const selectedDay = days[selectedDayIndex] ?? days[0];
-  const conditions = useMemo(() => buildCurrentConditions(spot), [spot]);
+  const currentConditions = useMemo(() => buildCurrentConditions(spot), [spot]);
   const rows = useMemo(
     () => buildHourlyForecastRows(spot, selectedDay.date, initialSlotTime),
     [spot, selectedDay, initialSlotTime],
@@ -113,6 +381,7 @@ export function ForecastDetailScreen({
     return () => window.cancelAnimationFrame(frame);
   }, [isRenaming]);
 
+
   const plannedTimes = useMemo(
     () =>
       new Set(
@@ -123,9 +392,11 @@ export function ForecastDetailScreen({
     [plannedDives, spot.id],
   );
 
-  const stop = (event: SyntheticEvent) => {
-    event.stopPropagation();
-  };
+
+  const sunTimes = useMemo(
+    () => createSunTimes(selectedDay.date, spot.latitude),
+    [selectedDay.date, spot.latitude],
+  );
 
   const commitTitle = () => {
     const trimmed = titleDraft.trim();
@@ -147,8 +418,8 @@ export function ForecastDetailScreen({
   return (
     <section className="forecast-detail-shell">
       <div className="forecast-detail-scroll">
-        <div className="forecast-detail-stage">
-          <header className="forecast-detail-hero">
+        <div className="forecast-detail-hero-band">
+          <div className="forecast-detail-hero-inner">
             <div className="forecast-detail-topbar">
               <button
                 type="button"
@@ -178,8 +449,8 @@ export function ForecastDetailScreen({
                   }
                   type="text"
                   value={titleDraft}
-                  onClick={stop}
-                  onPointerDown={stop}
+                  onClick={stopPropagation}
+                  onPointerDown={stopPropagation}
                   onChange={(event: ChangeEvent<HTMLInputElement>) =>
                     setTitleDraft(event.target.value)
                   }
@@ -197,7 +468,7 @@ export function ForecastDetailScreen({
                       event.currentTarget.blur();
                     }
                   }}
-                  aria-label="Favorite name"
+                  aria-label="Location name"
                   placeholder="Dropped pin"
                   tabIndex={isRenaming ? 0 : -1}
                 />
@@ -212,7 +483,7 @@ export function ForecastDetailScreen({
                       : "detail-circle-button detail-rename-button"
                   }
                   onClick={(event) => {
-                    stop(event);
+                    stopPropagation(event);
 
                     if (isRenaming) {
                       commitTitle();
@@ -221,8 +492,8 @@ export function ForecastDetailScreen({
 
                     setIsRenaming(true);
                   }}
-                  aria-label="Rename favorite"
-                  title="Rename favorite"
+                  aria-label="Rename location"
+                  title="Rename location"
                 >
                   <PencilIcon />
                 </button>
@@ -236,147 +507,145 @@ export function ForecastDetailScreen({
                   }
                   onClick={onToggleFavorite}
                   aria-label={isFavorite ? "Remove favorite" : "Add favorite"}
+                  title={isFavorite ? "Remove favorite" : "Add favorite"}
                 >
                   <StarIcon active={isFavorite} />
                 </button>
               </div>
             </div>
-          </header>
+          </div>
+        </div>
 
-          <div className="forecast-detail-content">
-            <div className="forecast-detail-content-inner">
-              <section className="forecast-section-card">
-                <div className="forecast-section-heading">
-                  <div>
-                    <h2>Current Conditions</h2>
-                    <p>{conditions.buoyLabel}</p>
-                  </div>
-                  <div className="forecast-clarity-pill">
-                    <span>{conditions.clarityLabel}</span>
-                    <strong>{conditions.clarityRange}</strong>
-                  </div>
+        <div className="forecast-detail-stage">
+          <div className="forecast-detail-content forecast-detail-stack">
+            <ForecastSummaryCard
+              title="Current Conditions"
+              subtitle={currentConditions.buoyLabel}
+              metrics={[
+                {
+                  icon: "wave",
+                  label: "Wave:",
+                  value: `${currentConditions.waveHeightFt.toFixed(1)} ft @ ${currentConditions.wavePeriodSec.toFixed(0)}s`,
+                },
+                {
+                  icon: "tide",
+                  label: "Tide:",
+                  value: `${currentConditions.tideDirection} ${currentConditions.tideHeightFt.toFixed(1)} ft`,
+                },
+                {
+                  icon: "wind",
+                  label: "Wind:",
+                  value: `${currentConditions.windDirection} ${currentConditions.windSpeedKt.toFixed(0)} kt • ${windRelationToShore(
+                    currentConditions.windDirection,
+                    spot.shoreDirection,
+                  )}`,
+                },
+                {
+                  icon: "water",
+                  label: "Water:",
+                  value: `${currentConditions.waterTempF.toFixed(0)}°F`,
+                },
+              ]}
+              clarityLabel="Water Clarity"
+              clarityValue={currentConditions.clarityRange}
+            />
+
+            <section className="forecast-table-section">
+              <div
+                className="forecast-detail-day-strip"
+                role="tablist"
+                aria-label="Forecast days"
+              >
+                {days.map((day, index) => (
+                  <button
+                    key={day.key}
+                    type="button"
+                    className={
+                      index === selectedDayIndex
+                        ? "forecast-day-tile active"
+                        : "forecast-day-tile"
+                    }
+                    onClick={() => setSelectedDayIndex(index)}
+                    role="tab"
+                    aria-selected={index === selectedDayIndex}
+                  >
+                    <span className="forecast-day-tile-top">
+                      {getDayPrimaryLabel(day.date, index)}
+                    </span>
+                    <span className="forecast-day-tile-bottom">
+                      {MONTH_DAY.format(day.date)}
+                    </span>
+                  </button>
+                ))}
+              </div>
+
+              <div className="forecast-sun-row">
+                <span>Sunrise {sunTimes.sunriseLabel}</span>
+                <span>Sunset {sunTimes.sunsetLabel}</span>
+              </div>
+
+              <div className="forecast-table-shell">
+                <div className="forecast-table-header">
+                  <span>Time</span>
+                  <span>Wave</span>
+                  <span>Tide</span>
+                  <span>Clarity</span>
+                  <span className="forecast-table-action-header">Plan</span>
                 </div>
 
-                <div className="forecast-current-grid">
-                  <div>
-                    <span>Wave</span>
-                    <strong>
-                      {conditions.waveHeightFt.toFixed(1)} ft @{" "}
-                      {conditions.wavePeriodSec.toFixed(0)}s
-                    </strong>
-                  </div>
-                  <div>
-                    <span>Tide</span>
-                    <strong>
-                      {conditions.tideDirection}{" "}
-                      {conditions.tideHeightFt.toFixed(1)} ft
-                    </strong>
-                  </div>
-                  <div>
-                    <span>Wind</span>
-                    <strong>
-                      {conditions.windDirection}{" "}
-                      {conditions.windSpeedKt.toFixed(0)} kt
-                    </strong>
-                  </div>
-                  <div>
-                    <span>Water</span>
-                    <strong>{conditions.waterTempF.toFixed(0)}°F</strong>
-                  </div>
+                <div className="forecast-table-rows">
+                  {rows.map((row) => {
+                    const rowTime = new Date(row.timeIso).getTime();
+                    const isSelected = initialSlotTime
+                      ? rowTime === new Date(initialSlotTime).getTime()
+                      : false;
+                    const isSaved = plannedTimes.has(rowTime);
+
+                    return (
+                      <div
+                        key={row.id}
+                        className={
+                          isSelected
+                            ? "forecast-table-row is-selected"
+                            : "forecast-table-row"
+                        }
+                      >
+                        <span className="forecast-table-time-cell">
+                          <strong>{row.hourLabel}</strong>
+                        </span>
+                        <span>{row.waveText}</span>
+                        <span>
+                          {row.tideText} <em>{row.tideDirection}</em>
+                        </span>
+                        <span className="forecast-table-clarity-cell">
+                          <ClarityChip
+                            text={clarityRangeFromFeet(row.clarityFt)}
+                            feet={row.clarityFt}
+                          />
+                        </span>
+                        <span className="forecast-table-action-cell">
+                          <button
+                            type="button"
+                            className={
+                              isSaved
+                                ? "table-plan-button compact-button active"
+                                : "table-plan-button compact-button"
+                            }
+                            onClick={() => onTogglePlanDive(row.timeIso)}
+                            aria-label={isSaved ? `Remove planned dive at ${row.hourLabel}` : `Add ${row.hourLabel} to planned dives`}
+                          >
+                            <span className="table-plan-button-icon" aria-hidden="true">
+                              {isSaved ? "✓" : "+"}
+                            </span>
+                            <span className="table-plan-button-label">{isSaved ? "Planned" : "Add"}</span>
+                          </button>
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
-              </section>
-
-              <section className="forecast-section-card">
-                <div className="forecast-section-heading compact">
-                  <div>
-                    <h2>Forecast</h2>
-                    <p>
-                      Placeholder values mapped to this location for UI work.
-                    </p>
-                  </div>
-                </div>
-
-                <div
-                  className="forecast-day-strip"
-                  role="tablist"
-                  aria-label="Forecast days"
-                >
-                  {days.map((day, index) => (
-                    <button
-                      key={day.key}
-                      type="button"
-                      className={
-                        index === selectedDayIndex
-                          ? "forecast-day-pill active"
-                          : "forecast-day-pill"
-                      }
-                      onClick={() => setSelectedDayIndex(index)}
-                      role="tab"
-                      aria-selected={index === selectedDayIndex}
-                    >
-                      {day.label}
-                    </button>
-                  ))}
-                </div>
-
-                <div className="forecast-hourly-table-wrap">
-                  <div className="forecast-hourly-header">
-                    <span>Time</span>
-                    <span>Wave</span>
-                    <span>Tide</span>
-                    <span>Clarity</span>
-                    <span>Plan</span>
-                  </div>
-
-                  <div className="forecast-hourly-rows">
-                    {rows.map((row) => {
-                      const isPlanned = plannedTimes.has(
-                        new Date(row.timeIso).getTime(),
-                      );
-                      const isInitial = initialSlotTime
-                        ? new Date(initialSlotTime).getTime() ===
-                          new Date(row.timeIso).getTime()
-                        : false;
-
-                      return (
-                        <div
-                          key={row.id}
-                          className={
-                            isInitial
-                              ? "forecast-hourly-row active"
-                              : "forecast-hourly-row"
-                          }
-                        >
-                          <span>{row.hourLabel}</span>
-                          <span>{row.waveText}</span>
-                          <span>
-                            {row.tideText} <em>{row.tideDirection}</em>
-                          </span>
-                          <span className="forecast-row-clarity">
-                            <strong>{row.clarityText}</strong>
-                            <small>{row.clarityLabel}</small>
-                          </span>
-                          <span>
-                            <button
-                              type="button"
-                              className={
-                                isPlanned
-                                  ? "table-plan-button active"
-                                  : "table-plan-button"
-                              }
-                              onClick={() => onPlanDive(row.timeIso)}
-                              disabled={isPlanned}
-                            >
-                              {isPlanned ? "Saved" : "Plan"}
-                            </button>
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              </section>
-            </div>
+              </div>
+            </section>
           </div>
         </div>
       </div>

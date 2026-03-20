@@ -1175,9 +1175,10 @@ code {
 
 
 .forecast-detail-content {
-  width: min(1120px, 100%);
-  margin: 0 auto;
-  padding: 18px 18px 118px;
+  width: calc(100% - 150px);
+  max-width: 970px;
+  margin: 0 auto 0 0;
+  padding: 18px 18px 118px 0;
   display: grid;
   gap: 18px;
 }

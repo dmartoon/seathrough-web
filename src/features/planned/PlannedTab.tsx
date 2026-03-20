@@ -22,11 +22,8 @@ export function PlannedTab({ dives, onOpen, onRemove }: PlannedTabProps) {
     return (
       <section className="list-stage">
         <div className="section-empty-card">
-          <p className="eyebrow">Planned dives</p>
-          <h2>No planned dives yet</h2>
-          <p className="helper-text">
-            Use the forecast screen or the map popup to save future slots here.
-          </p>
+          <h2>Planned dives</h2>
+          <p className="helper-text">Use the forecast screen to save future slots here.</p>
         </div>
       </section>
     );
@@ -36,10 +33,8 @@ export function PlannedTab({ dives, onOpen, onRemove }: PlannedTabProps) {
     <section className="list-stage">
       <div className="section-title-row">
         <div>
-          <p className="eyebrow">Planned dives</p>
-          <h2>Upcoming sessions</h2>
+          <h2>Planned dives</h2>
         </div>
-        <span className="section-badge">{dives.length}</span>
       </div>
 
       <div className="spot-list">
@@ -61,15 +56,15 @@ export function PlannedTab({ dives, onOpen, onRemove }: PlannedTabProps) {
           return (
             <article key={dive.id} className="list-spot-card">
               <button type="button" className="list-spot-main" onClick={() => onOpen(dive)}>
-                <div>
+                <div className="list-spot-copy">
                   <h3>{dive.spotName}</h3>
-                  <p>{formatDateTime(dive.slotTime)}</p>
+                  <p className="list-spot-date">{formatDateTime(dive.slotTime)}</p>
                   <p>{conditions.buoyLabel}</p>
                 </div>
 
                 <div className="list-spot-side">
+                  <span className="list-spot-side-label">Current water clarity</span>
                   <strong>{conditions.clarityRange}</strong>
-                  <span>{conditions.clarityLabel}</span>
                 </div>
               </button>
 
