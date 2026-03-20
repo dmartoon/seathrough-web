@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent, type SyntheticEvent } from "react";
 import type { PinnedSpot } from "../../domain/types";
-import { buildCurrentConditions } from "../forecast/placeholderForecast";
+import { mapCurrentConditionsFromApi } from "../forecast/placeholderForecast";
+import { useSpotForecast } from "../forecast/useSpotForecast";
 
 type FavoritesTabProps = {
   favorites: PinnedSpot[];
@@ -32,7 +33,8 @@ function FavoriteSpotCard({
   onRemove: (spot: PinnedSpot) => void;
   onRename: (spot: PinnedSpot, nextName: string) => void;
 }) {
-  const conditions = buildCurrentConditions(spot);
+  const { data: forecastData } = useSpotForecast(spot);
+  const conditions = mapCurrentConditionsFromApi(spot, forecastData);
   const [titleDraft, setTitleDraft] = useState(spot.name);
   const [isRenaming, setIsRenaming] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);

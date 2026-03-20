@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ChangeEvent, type SyntheticEvent } from "react";
 import type { PinnedSpot } from "../../domain/types";
-import { buildCurrentConditions } from "../../features/forecast/placeholderForecast";
+import { mapCurrentConditionsFromApi } from "../../features/forecast/placeholderForecast";
+import { useSpotForecast } from "../../features/forecast/useSpotForecast";
 
 function StarIcon({ active }: { active: boolean }) {
   return (
@@ -146,7 +147,8 @@ export function MapSpotCard({
   onToggleFavorite,
   onRename,
 }: MapSpotCardProps) {
-  const conditions = buildCurrentConditions(spot);
+  const { data: forecastData } = useSpotForecast(spot);
+  const conditions = mapCurrentConditionsFromApi(spot, forecastData);
   const [titleDraft, setTitleDraft] = useState(spot.name);
   const [isRenaming, setIsRenaming] = useState(false);
   const titleInputRef = useRef<HTMLInputElement | null>(null);
@@ -250,7 +252,7 @@ export function MapSpotCard({
           </div>
 
           <p className="map-spot-card-subtitle">Current conditions</p>
-          <span className="map-spot-card-source">Using NOAA buoy 46222</span>
+          <span className="map-spot-card-source">{conditions.buoyLabel}</span>
 
           <div className="map-spot-card-rows">
             {[
@@ -262,7 +264,10 @@ export function MapSpotCard({
               {
                 icon: "tide" as const,
                 label: "Tide:",
-                value: `${conditions.tideDirection} ${conditions.tideHeightFt.toFixed(1)} ft`,
+                value:
+                  conditions.tideHeightFt === null
+                    ? `${conditions.tideDirection} —`
+                    : `${conditions.tideDirection} ${conditions.tideHeightFt.toFixed(1)} ft`,
               },
               {
                 icon: "wind" as const,
@@ -272,7 +277,8 @@ export function MapSpotCard({
               {
                 icon: "water" as const,
                 label: "Water:",
-                value: `${conditions.waterTempF.toFixed(0)}°F`,
+                value:
+                  conditions.waterTempF === null ? `—` : `${conditions.waterTempF.toFixed(0)}°F`,
               },
             ].map((item) => (
               <div key={item.icon} className="map-spot-card-metric-row">

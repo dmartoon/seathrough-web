@@ -1,5 +1,9 @@
 import type { PlannedDive } from "../../domain/types";
-import { buildCurrentConditions } from "../forecast/placeholderForecast";
+import {
+  buildCurrentConditions,
+  getForecastClarityRangeForSlotFromApi,
+} from "../forecast/placeholderForecast";
+import { useSpotForecast } from "../forecast/useSpotForecast";
 
 function formatDateTime(value: string) {
   return new Intl.DateTimeFormat(undefined, {
@@ -16,6 +20,66 @@ type PlannedTabProps = {
   onOpen: (dive: PlannedDive) => void;
   onRemove: (dive: PlannedDive) => void;
 };
+
+function PlannedDiveCard({
+  dive,
+  onOpen,
+  onRemove,
+}: {
+  dive: PlannedDive;
+  onOpen: (dive: PlannedDive) => void;
+  onRemove: (dive: PlannedDive) => void;
+}) {
+  const spot = {
+    id: dive.spotId,
+    name: dive.spotName,
+    latitude: dive.latitude,
+    longitude: dive.longitude,
+    buoyId: dive.buoyId,
+    tideStation: dive.tideStation,
+    shoreDirection: dive.shoreDirection,
+    region: dive.region,
+    source: "custom" as const,
+    createdAt: dive.createdAt,
+    updatedAt: dive.createdAt,
+  };
+
+  const { data: forecastData } = useSpotForecast(spot);
+  const fallbackConditions = buildCurrentConditions(spot);
+  const clarityRange =
+    getForecastClarityRangeForSlotFromApi(forecastData, dive.slotTime) ??
+    fallbackConditions.clarityRange;
+
+  return (
+    <article key={dive.id} className="list-spot-card">
+      <button type="button" className="list-spot-main" onClick={() => onOpen(dive)}>
+        <div className="list-spot-copy">
+          <h3>{dive.spotName}</h3>
+          <p className="list-spot-date">{formatDateTime(dive.slotTime)}</p>
+          <p>{forecastData?.current.buoyLabel ?? fallbackConditions.buoyLabel}</p>
+        </div>
+
+        <div className="list-spot-side">
+          <span className="list-spot-side-label">Current water clarity</span>
+          <strong>{clarityRange}</strong>
+        </div>
+      </button>
+
+      <div className="list-spot-actions">
+        <button type="button" className="secondary-button compact-button" onClick={() => onOpen(dive)}>
+          View forecast
+        </button>
+        <button
+          type="button"
+          className="ghost-button compact-button"
+          onClick={() => onRemove(dive)}
+        >
+          Remove
+        </button>
+      </div>
+    </article>
+  );
+}
 
 export function PlannedTab({ dives, onOpen, onRemove }: PlannedTabProps) {
   if (dives.length === 0) {
@@ -38,51 +102,9 @@ export function PlannedTab({ dives, onOpen, onRemove }: PlannedTabProps) {
       </div>
 
       <div className="spot-list">
-        {dives.map((dive) => {
-          const conditions = buildCurrentConditions({
-            id: dive.spotId,
-            name: dive.spotName,
-            latitude: dive.latitude,
-            longitude: dive.longitude,
-            buoyId: dive.buoyId,
-            tideStation: dive.tideStation,
-            shoreDirection: dive.shoreDirection,
-            region: dive.region,
-            source: "custom",
-            createdAt: dive.createdAt,
-            updatedAt: dive.createdAt,
-          });
-
-          return (
-            <article key={dive.id} className="list-spot-card">
-              <button type="button" className="list-spot-main" onClick={() => onOpen(dive)}>
-                <div className="list-spot-copy">
-                  <h3>{dive.spotName}</h3>
-                  <p className="list-spot-date">{formatDateTime(dive.slotTime)}</p>
-                  <p>{conditions.buoyLabel}</p>
-                </div>
-
-                <div className="list-spot-side">
-                  <span className="list-spot-side-label">Current water clarity</span>
-                  <strong>{conditions.clarityRange}</strong>
-                </div>
-              </button>
-
-              <div className="list-spot-actions">
-                <button type="button" className="secondary-button compact-button" onClick={() => onOpen(dive)}>
-                  View forecast
-                </button>
-                <button
-                  type="button"
-                  className="ghost-button compact-button"
-                  onClick={() => onRemove(dive)}
-                >
-                  Remove
-                </button>
-              </div>
-            </article>
-          );
-        })}
+        {dives.map((dive) => (
+          <PlannedDiveCard key={dive.id} dive={dive} onOpen={onOpen} onRemove={onRemove} />
+        ))}
       </div>
     </section>
   );

@@ -9,10 +9,13 @@ import {
 } from "react";
 import type { PinnedSpot, PlannedDive } from "../../domain/types";
 import {
-  buildCurrentConditions,
   buildForecastDays,
-  buildHourlyForecastRows,
+  buildHourlyForecastRowsFromApi,
+  mapCurrentConditionsFromApi,
+  resolveSunTimesForDay,
+  toLocalDayKey,
 } from "./placeholderForecast";
+import { useSpotForecast } from "./useSpotForecast";
 
 function BackIcon() {
   return (
@@ -167,7 +170,7 @@ function stopPropagation(event: SyntheticEvent) {
 }
 
 function toDayKey(value: Date | string) {
-  return new Date(value).toISOString().slice(0, 10);
+  return toLocalDayKey(value);
 }
 
 function getDayPrimaryLabel(date: Date, index: number) {
@@ -217,17 +220,15 @@ function windRelationToShore(direction: string, shoreDirection: number) {
   return "Cross-shore";
 }
 
-function clarityRangeFromFeet(value: number) {
-  const lower = Math.max(2, Math.round(value / 5) * 5 - 2);
-  const upper = Math.max(lower + 5, lower + 5);
-  return `${lower}-${upper} ft`;
-}
+function clarityChipStyle(ft: number) {
+  const clamped = Math.min(Math.max(ft, 0), 35);
+  const hue = (0.33 * (clamped / 35)) * 360;
 
-function clarityTone(ft: number) {
-  if (ft >= 18) return "excellent";
-  if (ft >= 13) return "good";
-  if (ft >= 8) return "fair";
-  return "poor";
+  return {
+    color: `hsl(${hue} 85% 95%)`,
+    backgroundColor: `hsl(${hue} 85% 60% / 0.18)`,
+    borderColor: `hsl(${hue} 85% 60% / 0.35)`,
+  };
 }
 
 function createSunTimes(date: Date, latitude: number) {
@@ -330,7 +331,7 @@ function ForecastSummaryCard({
 
 function ClarityChip({ text, feet }: { text: string; feet: number }) {
   return (
-    <span className={`forecast-clarity-chip ${clarityTone(feet)}`}>{text}</span>
+    <span className="forecast-clarity-chip" style={clarityChipStyle(feet)}>{text}</span>
   );
 }
 
@@ -359,10 +360,14 @@ export function ForecastDetailScreen({
   const titleInputRef = useRef<HTMLInputElement | null>(null);
 
   const selectedDay = days[selectedDayIndex] ?? days[0];
-  const currentConditions = useMemo(() => buildCurrentConditions(spot), [spot]);
+  const { data: forecastData } = useSpotForecast(spot);
+  const currentConditions = useMemo(
+    () => mapCurrentConditionsFromApi(spot, forecastData),
+    [spot, forecastData],
+  );
   const rows = useMemo(
-    () => buildHourlyForecastRows(spot, selectedDay.date, initialSlotTime),
-    [spot, selectedDay, initialSlotTime],
+    () => buildHourlyForecastRowsFromApi(spot, forecastData, selectedDay.date, initialSlotTime),
+    [spot, forecastData, selectedDay, initialSlotTime],
   );
 
   useEffect(() => {
@@ -393,10 +398,18 @@ export function ForecastDetailScreen({
   );
 
 
-  const sunTimes = useMemo(
-    () => createSunTimes(selectedDay.date, spot.latitude),
-    [selectedDay.date, spot.latitude],
-  );
+  const sunTimes = useMemo(() => {
+    const resolved = resolveSunTimesForDay(forecastData, selectedDay.key);
+
+    if (!resolved) {
+      return createSunTimes(selectedDay.date, spot.latitude);
+    }
+
+    return {
+      sunriseLabel: TIME_ONLY.format(new Date(resolved.sunriseIso)),
+      sunsetLabel: TIME_ONLY.format(new Date(resolved.sunsetIso)),
+    };
+  }, [forecastData, selectedDay, spot.latitude]);
 
   const commitTitle = () => {
     const trimmed = titleDraft.trim();
@@ -530,7 +543,10 @@ export function ForecastDetailScreen({
                 {
                   icon: "tide",
                   label: "Tide:",
-                  value: `${currentConditions.tideDirection} ${currentConditions.tideHeightFt.toFixed(1)} ft`,
+                  value:
+                    currentConditions.tideHeightFt === null
+                      ? `${currentConditions.tideDirection} —`
+                      : `${currentConditions.tideDirection} ${currentConditions.tideHeightFt.toFixed(1)} ft`,
                 },
                 {
                   icon: "wind",
@@ -543,7 +559,10 @@ export function ForecastDetailScreen({
                 {
                   icon: "water",
                   label: "Water:",
-                  value: `${currentConditions.waterTempF.toFixed(0)}°F`,
+                  value:
+                    currentConditions.waterTempF === null
+                      ? `—`
+                      : `${currentConditions.waterTempF.toFixed(0)}°F`,
                 },
               ]}
               clarityLabel="Water Clarity"
@@ -619,7 +638,7 @@ export function ForecastDetailScreen({
                         </span>
                         <span className="forecast-table-clarity-cell">
                           <ClarityChip
-                            text={clarityRangeFromFeet(row.clarityFt)}
+                            text={row.clarityLabel}
                             feet={row.clarityFt}
                           />
                         </span>
