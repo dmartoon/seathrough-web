@@ -11,8 +11,8 @@ const VALIDATED_TTL_MS = 30 * 60 * 1000;
 const VALIDATED_MAX = 200;
 const BEARINGS_4 = [0, 90, 180, 270] as const;
 const BEARINGS_DIAG = [45, 135, 225, 315] as const;
-const OCEAN_TEXT = /\b(ocean|sea|bay|gulf|channel|strait|lagoon|reef|shoal|pacific|atlantic|cove|harbor|harbour)\b/i;
-const LAND_TYPES = new Set([
+const OCEAN_TEXT = /\b(ocean|sea|bay|gulf|channel|strait|lagoon|reef|shoal|pacific|atlantic|cove|harbor|harbour|marine|underwater)\b/i;
+const STRONG_LAND_TYPES = new Set([
   "street_address",
   "premise",
   "subpremise",
@@ -21,18 +21,10 @@ const LAND_TYPES = new Set([
   "point_of_interest",
   "establishment",
   "park",
-  "neighborhood",
-  "postal_code",
-  "locality",
-  "sublocality",
-  "sublocality_level_1",
-  "administrative_area_level_1",
-  "administrative_area_level_2",
-  "administrative_area_level_3",
-  "administrative_area_level_4",
-  "administrative_area_level_5",
-  "country",
 ]);
+const CLASSIFY_RETRY_DELAYS_MS = [350, 800] as const;
+const MIN_GEOCODE_SPACING_MS = 140;
+const MAX_FAILURE_COOLDOWN_MS = 3000;
 
 type Surface = "ocean" | "land" | "unknown";
 
@@ -167,6 +159,10 @@ export function pickPlaceName(results: ReverseGeocodeResult[]) {
   return first.formatted_address?.split(",")[0]?.trim() ?? null;
 }
 
+function sleep(ms: number) {
+  return new Promise<void>((resolve) => globalThis.setTimeout(resolve, ms));
+}
+
 function destination(from: LatLng, bearingDeg: number, distanceMeters: number): LatLng {
   const radiusMeters = 6_371_000;
   const bearing = (bearingDeg * Math.PI) / 180;
@@ -196,6 +192,9 @@ export class DropValidator {
   private readonly reverseGeocode: ReverseGeocodeFn;
   private readonly maxInlandMiles: number;
   private readonly maxOffshoreMiles: number;
+  private lastGeocodeAtMs = 0;
+  private cooldownUntilMs = 0;
+  private consecutiveFailures = 0;
 
   constructor(
     reverseGeocode: ReverseGeocodeFn,
@@ -311,45 +310,90 @@ export class DropValidator {
     return this.surfaceCache.get(this.cacheKey(coordinate)) ?? this.inferSurfaceFromCache(coordinate, 1);
   }
 
+  private async throttleBeforeGeocode() {
+    const now = Date.now();
+
+    if (now < this.cooldownUntilMs) {
+      await sleep(this.cooldownUntilMs - now);
+    }
+
+    const nowAfterCooldown = Date.now();
+    if (this.lastGeocodeAtMs !== 0) {
+      const elapsed = nowAfterCooldown - this.lastGeocodeAtMs;
+      if (elapsed < MIN_GEOCODE_SPACING_MS) {
+        await sleep(MIN_GEOCODE_SPACING_MS - elapsed);
+      }
+    }
+
+    await sleep(Math.floor(Math.random() * 26));
+    this.lastGeocodeAtMs = Date.now();
+  }
+
+  private recordGeocodeSuccess() {
+    this.consecutiveFailures = 0;
+    this.cooldownUntilMs = 0;
+  }
+
+  private recordGeocodeFailure() {
+    this.consecutiveFailures += 1;
+
+    const exponent = Math.min(Math.max(this.consecutiveFailures - 1, 0), 3);
+    const backoffMs = Math.min(MAX_FAILURE_COOLDOWN_MS, 250 * 2 ** exponent);
+    this.cooldownUntilMs = Date.now() + backoffMs;
+  }
+
+  private hasOceanSignal(results: ReverseGeocodeResult[]) {
+    return results.some((result) => {
+      if (OCEAN_TEXT.test(result.formatted_address ?? "")) {
+        return true;
+      }
+
+      return (result.address_components ?? []).some((component) =>
+        OCEAN_TEXT.test(`${component.long_name ?? ""} ${component.short_name ?? ""}`),
+      );
+    });
+  }
+
+  private hasStrongLandSignal(results: ReverseGeocodeResult[]) {
+    return results.some((result) => {
+      if ((result.types ?? []).some((type) => STRONG_LAND_TYPES.has(type))) {
+        return true;
+      }
+
+      return (result.address_components ?? []).some((component) =>
+        component.types?.some((type) => STRONG_LAND_TYPES.has(type)),
+      );
+    });
+  }
+
   private classifyFromResults(results: ReverseGeocodeResult[]): Surface {
     if (!results.length) {
       return "unknown";
     }
 
-    let sawLandSignal = false;
-    let sawOceanSignal = false;
-
-    for (const result of results) {
-      const formatted = result.formatted_address ?? "";
-      if (OCEAN_TEXT.test(formatted)) {
-        sawOceanSignal = true;
-      }
-
-      for (const type of result.types ?? []) {
-        if (type === "natural_feature" && OCEAN_TEXT.test(formatted)) {
-          sawOceanSignal = true;
-        }
-        if (LAND_TYPES.has(type)) {
-          sawLandSignal = true;
-        }
-      }
-
-      for (const component of result.address_components ?? []) {
-        const componentText = `${component.long_name ?? ""} ${component.short_name ?? ""}`;
-        if (OCEAN_TEXT.test(componentText)) {
-          sawOceanSignal = true;
-        }
-        if (component.types?.some((type) => LAND_TYPES.has(type))) {
-          sawLandSignal = true;
-        }
-      }
+    if (this.hasOceanSignal(results)) {
+      return "ocean";
     }
 
-    if (sawOceanSignal && !sawLandSignal) return "ocean";
-    if (sawLandSignal && !sawOceanSignal) return "land";
-    if (sawOceanSignal) return "ocean";
-    if (sawLandSignal) return "land";
+    if (this.hasStrongLandSignal(results)) {
+      return "land";
+    }
+
     return "unknown";
+  }
+
+  private async reverseGeocodeSurface(coordinate: LatLng): Promise<Surface> {
+    await this.throttleBeforeGeocode();
+
+    try {
+      const results = await this.reverseGeocode(coordinate);
+      const surface = this.classifyFromResults(results);
+      this.recordGeocodeSuccess();
+      return surface;
+    } catch {
+      this.recordGeocodeFailure();
+      return "unknown";
+    }
   }
 
   private async classifySurface(coordinate: LatLng): Promise<Surface> {
@@ -358,14 +402,23 @@ export class DropValidator {
       return cached;
     }
 
-    try {
-      const results = await this.reverseGeocode(coordinate);
-      const surface = this.classifyFromResults(results);
+    for (let attempt = 0; attempt <= CLASSIFY_RETRY_DELAYS_MS.length; attempt += 1) {
+      const surface = await this.reverseGeocodeSurface(coordinate);
       this.rememberSurface(coordinate, surface);
-      return surface;
-    } catch {
-      return "unknown";
+
+      if (surface !== "unknown") {
+        return surface;
+      }
+
+      const delayMs = CLASSIFY_RETRY_DELAYS_MS[attempt];
+      if (delayMs === undefined) {
+        break;
+      }
+
+      await sleep(delayMs);
     }
+
+    return "unknown";
   }
 
   private async ringHasLand(center: LatLng, radiusMiles: number, bearings: readonly number[]) {
