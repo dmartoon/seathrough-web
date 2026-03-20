@@ -60,7 +60,7 @@ function PlannedDiveCard({
         </div>
 
         <div className="list-spot-side">
-          <span className="list-spot-side-label">Current water clarity</span>
+          <span className="list-spot-side-label">Forecasted water clarity</span>
           <strong>{clarityRange}</strong>
         </div>
       </button>
