@@ -66,9 +66,6 @@ function PlannedDiveCard({
       </button>
 
       <div className="list-spot-actions">
-        <button type="button" className="secondary-button compact-button" onClick={() => onOpen(dive)}>
-          View forecast
-        </button>
         <button
           type="button"
           className="ghost-button compact-button"
