@@ -1,6 +1,7 @@
-import { SUPPORTED_LOCATIONS } from "../data/supportedLocations";
 import type { DiveLocation, PlannedDive, PinnedSpot as SavedSpot } from "./types";
 import type { PinnedSpot as MapPin } from "../types/map";
+
+import { findNearestSupportedLocation } from "./pinDrop";
 
 const SAME_SPOT_EPSILON = 0.00015;
 
@@ -17,36 +18,6 @@ function stableHash(input: string) {
 function sanitizeLabel(label: string) {
   const trimmed = label.trim();
   return trimmed.length ? trimmed : "Pinned Spot";
-}
-
-export function computeDistanceScore(
-  latitudeA: number,
-  longitudeA: number,
-  latitudeB: number,
-  longitudeB: number,
-) {
-  const lat = latitudeA - latitudeB;
-  const lng = longitudeA - longitudeB;
-  return lat * lat + lng * lng;
-}
-
-export function findNearestSupportedLocation(latitude: number, longitude: number) {
-  return SUPPORTED_LOCATIONS.reduce<DiveLocation>((best, candidate) => {
-    const bestScore = computeDistanceScore(
-      latitude,
-      longitude,
-      best.latitude,
-      best.longitude,
-    );
-    const candidateScore = computeDistanceScore(
-      latitude,
-      longitude,
-      candidate.latitude,
-      candidate.longitude,
-    );
-
-    return candidateScore < bestScore ? candidate : best;
-  }, SUPPORTED_LOCATIONS[0]);
 }
 
 export function makeSavedSpotFromMapPin(pin: MapPin): SavedSpot {

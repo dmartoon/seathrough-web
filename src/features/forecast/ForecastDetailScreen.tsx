@@ -206,7 +206,11 @@ function angularDifference(a: number, b: number) {
   return diff > 180 ? 360 - diff : diff;
 }
 
-function windRelationToShore(direction: string, shoreDirection: number) {
+function windRelationToShore(direction: string | null, shoreDirection: number) {
+  if (!direction) {
+    return null;
+  }
+
   const windDegrees = cardinalToDegrees(direction);
 
   if (windDegrees === null) {
@@ -220,7 +224,47 @@ function windRelationToShore(direction: string, shoreDirection: number) {
   return "Cross-shore";
 }
 
-function clarityChipStyle(ft: number) {
+function formatCurrentWaveValue(waveHeightFt: number | null, wavePeriodSec: number | null) {
+  if (waveHeightFt === null && wavePeriodSec === null) return "—";
+  if (waveHeightFt === null) return `— @ ${Math.round(wavePeriodSec ?? 0)}s`;
+  if (wavePeriodSec === null) return `${waveHeightFt.toFixed(1)} ft`;
+  return `${waveHeightFt.toFixed(1)} ft @ ${wavePeriodSec.toFixed(0)}s`;
+}
+
+function formatCurrentTideValue(
+  tideDirection: "Rising" | "Falling" | "Slack" | "Steady" | null,
+  tideHeightFt: number | null,
+) {
+  if (!tideDirection && tideHeightFt === null) return "—";
+  if (!tideDirection) return tideHeightFt === null ? "—" : `${tideHeightFt.toFixed(1)} ft`;
+  if (tideHeightFt === null) return `${tideDirection} —`;
+  return `${tideDirection} ${tideHeightFt.toFixed(1)} ft`;
+}
+
+function formatCurrentWindValue(
+  windDirection: string | null,
+  windSpeedKt: number | null,
+  shoreDirection: number,
+) {
+  const relation = windRelationToShore(windDirection, shoreDirection);
+
+  if (!windDirection && windSpeedKt === null) return "—";
+  if (!windDirection) return `${Math.round(windSpeedKt ?? 0)} kt`;
+  if (windSpeedKt === null) return relation ? `${windDirection} • ${relation}` : windDirection;
+  return relation
+    ? `${windDirection} ${windSpeedKt.toFixed(0)} kt • ${relation}`
+    : `${windDirection} ${windSpeedKt.toFixed(0)} kt`;
+}
+
+function clarityChipStyle(ft: number | null) {
+  if (ft === null || !Number.isFinite(ft)) {
+    return {
+      color: "rgba(233, 239, 247, 0.88)",
+      backgroundColor: "rgba(255, 255, 255, 0.08)",
+      borderColor: "rgba(255, 255, 255, 0.14)",
+    };
+  }
+
   const clamped = Math.min(Math.max(ft, 0), 35);
   const hue = (0.33 * (clamped / 35)) * 360;
 
@@ -228,34 +272,6 @@ function clarityChipStyle(ft: number) {
     color: `hsl(${hue} 85% 95%)`,
     backgroundColor: `hsl(${hue} 85% 60% / 0.18)`,
     borderColor: `hsl(${hue} 85% 60% / 0.35)`,
-  };
-}
-
-function createSunTimes(date: Date, latitude: number) {
-  const start = new Date(date);
-  start.setHours(0, 0, 0, 0);
-
-  const dayOfYear = Math.floor(
-    (Date.UTC(start.getFullYear(), start.getMonth(), start.getDate()) -
-      Date.UTC(start.getFullYear(), 0, 0)) /
-      86400000,
-  );
-  const latitudeFactor = Math.min(1.08, Math.max(0.45, Math.abs(latitude) / 40));
-  const seasonal = Math.sin(((dayOfYear - 80) / 365) * Math.PI * 2);
-  const daylightHours = 12 + seasonal * 2.9 * latitudeFactor;
-  const solarNoon = 12.02;
-  const sunriseHour = solarNoon - daylightHours / 2;
-  const sunsetHour = solarNoon + daylightHours / 2;
-
-  const sunrise = new Date(start);
-  sunrise.setMinutes(Math.round(sunriseHour * 60));
-
-  const sunset = new Date(start);
-  sunset.setMinutes(Math.round(sunsetHour * 60));
-
-  return {
-    sunriseLabel: TIME_ONLY.format(sunrise),
-    sunsetLabel: TIME_ONLY.format(sunset),
   };
 }
 
@@ -329,7 +345,7 @@ function ForecastSummaryCard({
   );
 }
 
-function ClarityChip({ text, feet }: { text: string; feet: number }) {
+function ClarityChip({ text, feet }: { text: string; feet: number | null }) {
   return (
     <span className="forecast-clarity-chip" style={clarityChipStyle(feet)}>{text}</span>
   );
@@ -402,18 +418,21 @@ export function ForecastDetailScreen({
     const resolved = resolveSunTimesForDay(forecastData, selectedDay.key);
 
     if (!resolved) {
-      return createSunTimes(selectedDay.date, spot.latitude);
+      return {
+        sunriseLabel: "—",
+        sunsetLabel: "—",
+      };
     }
 
     return {
       sunriseLabel: TIME_ONLY.format(new Date(resolved.sunriseIso)),
       sunsetLabel: TIME_ONLY.format(new Date(resolved.sunsetIso)),
     };
-  }, [forecastData, selectedDay, spot.latitude]);
+  }, [forecastData, selectedDay.key]);
 
   const commitTitle = () => {
     const trimmed = titleDraft.trim();
-    const nextName = trimmed || "Dropped pin";
+    const nextName = trimmed || "Pinned Spot";
 
     if (nextName !== spot.name) {
       onRename(nextName);
@@ -482,7 +501,7 @@ export function ForecastDetailScreen({
                     }
                   }}
                   aria-label="Location name"
-                  placeholder="Dropped pin"
+                  placeholder="Pinned Spot"
                   tabIndex={isRenaming ? 0 : -1}
                 />
               </div>
@@ -538,23 +557,27 @@ export function ForecastDetailScreen({
                 {
                   icon: "wave",
                   label: "Wave:",
-                  value: `${currentConditions.waveHeightFt.toFixed(1)} ft @ ${currentConditions.wavePeriodSec.toFixed(0)}s`,
+                  value: formatCurrentWaveValue(
+                    currentConditions.waveHeightFt,
+                    currentConditions.wavePeriodSec,
+                  ),
                 },
                 {
                   icon: "tide",
                   label: "Tide:",
-                  value:
-                    currentConditions.tideHeightFt === null
-                      ? `${currentConditions.tideDirection} —`
-                      : `${currentConditions.tideDirection} ${currentConditions.tideHeightFt.toFixed(1)} ft`,
+                  value: formatCurrentTideValue(
+                    currentConditions.tideDirection,
+                    currentConditions.tideHeightFt,
+                  ),
                 },
                 {
                   icon: "wind",
                   label: "Wind:",
-                  value: `${currentConditions.windDirection} ${currentConditions.windSpeedKt.toFixed(0)} kt • ${windRelationToShore(
+                  value: formatCurrentWindValue(
                     currentConditions.windDirection,
+                    currentConditions.windSpeedKt,
                     spot.shoreDirection,
-                  )}`,
+                  ),
                 },
                 {
                   icon: "water",

@@ -3,14 +3,14 @@ import type { ForecastApiResponse } from "./forecastApi";
 
 export type CurrentConditions = {
   buoyLabel: string;
-  waveHeightFt: number;
-  wavePeriodSec: number;
+  waveHeightFt: number | null;
+  wavePeriodSec: number | null;
   tideHeightFt: number | null;
-  tideDirection: "Rising" | "Falling" | "Slack" | "Steady";
-  windDirection: string;
-  windSpeedKt: number;
+  tideDirection: "Rising" | "Falling" | "Slack" | "Steady" | null;
+  windDirection: string | null;
+  windSpeedKt: number | null;
   waterTempF: number | null;
-  clarityFt: number;
+  clarityFt: number | null;
   clarityRange: string;
   clarityLabel: string;
 };
@@ -28,34 +28,14 @@ export type HourlyForecastRow = {
   waveText: string;
   tideText: string;
   tideDirection: "↗" | "↘" | "→";
-  clarityFt: number;
+  clarityFt: number | null;
   clarityLabel: string;
   clarityText: string;
   waterTempF: number | null;
   windText: string;
 };
 
-function stableSeed(spot: PinnedSpot) {
-  const input = `${spot.id}:${spot.latitude.toFixed(4)}:${spot.longitude.toFixed(4)}:${spot.buoyId}`;
-  let hash = 2166136261;
-
-  for (let index = 0; index < input.length; index += 1) {
-    hash ^= input.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-
-  return Math.abs(hash >>> 0);
-}
-
-function seededUnit(seed: number, offset: number) {
-  const raw = Math.sin(seed * 0.00037 + offset * 1.61803398875) * 43758.5453123;
-  return raw - Math.floor(raw);
-}
-
-function roundTo(value: number, digits: number) {
-  const power = 10 ** digits;
-  return Math.round(value * power) / power;
-}
+const UNAVAILABLE_TEXT = "—";
 
 function pad2(value: number) {
   return String(value).padStart(2, "0");
@@ -77,7 +57,6 @@ export function formatForecastClarityRange(value: number) {
   const upper = lower + 5;
   return `${lower}-${upper} ft`;
 }
-
 
 function parseClarityFeetFromLabel(label: string) {
   const normalized = label
@@ -104,7 +83,7 @@ function parseClarityFeetFromLabel(label: string) {
   return Number.isFinite(value) ? value : null;
 }
 
-function displayClarityFeetFromApiRow(row: ForecastApiResponse["hourly"][number], fallbackFeet: number) {
+function displayClarityFeetFromApiRow(row: ForecastApiResponse["hourly"][number]) {
   if (typeof row.predictedClarityMinFt === "number") {
     return row.predictedClarityMinFt;
   }
@@ -116,7 +95,11 @@ function displayClarityFeetFromApiRow(row: ForecastApiResponse["hourly"][number]
     }
   }
 
-  return fallbackFeet;
+  if (typeof row.predictedClarityFt === "number") {
+    return row.predictedClarityFt;
+  }
+
+  return null;
 }
 
 function resolveSunTimesEntry(
@@ -171,32 +154,18 @@ export function buildForecastDays(start = new Date(), count = 10) {
 }
 
 export function buildCurrentConditions(spot: PinnedSpot): CurrentConditions {
-  const seed = stableSeed(spot);
-  const waveHeightFt = roundTo(1.8 + seededUnit(seed, 1) * 3.7, 1);
-  const wavePeriodSec = roundTo(8 + seededUnit(seed, 2) * 8, 0);
-  const tideHeightFt = roundTo(1.2 + seededUnit(seed, 3) * 4.3, 1);
-  const windSpeedKt = roundTo(4 + seededUnit(seed, 4) * 13, 0);
-  const waterTempF = roundTo(56 + seededUnit(seed, 5) * 11, 0);
-  const clarityFt = roundTo(7 + seededUnit(seed, 6) * 15, 0);
-  const clarityMin = Math.max(2, clarityFt - 2);
-  const clarityMax = clarityFt + 2;
-  const directionIndex = Math.floor(seededUnit(seed, 7) * 8);
-  const windDirections = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
-  const tideDirection: CurrentConditions["tideDirection"] =
-    seededUnit(seed, 8) > 0.66 ? "Rising" : seededUnit(seed, 8) > 0.33 ? "Falling" : "Slack";
-
   return {
     buoyLabel: `Using NOAA buoy ${spot.buoyId}`,
-    waveHeightFt,
-    wavePeriodSec,
-    tideHeightFt,
-    tideDirection,
-    windDirection: windDirections[directionIndex] ?? "W",
-    windSpeedKt,
-    waterTempF,
-    clarityFt,
-    clarityRange: `${clarityMin}-${clarityMax} ft`,
-    clarityLabel: clarityLabelForFeet(clarityFt),
+    waveHeightFt: null,
+    wavePeriodSec: null,
+    tideHeightFt: null,
+    tideDirection: null,
+    windDirection: null,
+    windSpeedKt: null,
+    waterTempF: null,
+    clarityFt: null,
+    clarityRange: UNAVAILABLE_TEXT,
+    clarityLabel: UNAVAILABLE_TEXT,
   };
 }
 
@@ -209,33 +178,30 @@ export function mapCurrentConditionsFromApi(
   }
 
   return {
-    buoyLabel: forecast.current.buoyLabel,
-    waveHeightFt: forecast.current.waveHeightFt,
-    wavePeriodSec: forecast.current.wavePeriodSec,
+    buoyLabel: forecast.current.buoyLabel || `Using NOAA buoy ${spot.buoyId}`,
+    waveHeightFt:
+      typeof forecast.current.waveHeightFt === "number" ? forecast.current.waveHeightFt : null,
+    wavePeriodSec:
+      typeof forecast.current.wavePeriodSec === "number" ? forecast.current.wavePeriodSec : null,
     tideHeightFt: forecast.current.tideHeightFt,
-    tideDirection: forecast.current.tideDirection,
-    windDirection: forecast.current.windDirectionCardinal,
-    windSpeedKt: forecast.current.windSpeedKt,
+    tideDirection: forecast.current.tideDirection ?? null,
+    windDirection: forecast.current.windDirectionCardinal || null,
+    windSpeedKt:
+      typeof forecast.current.windSpeedKt === "number" ? forecast.current.windSpeedKt : null,
     waterTempF: forecast.current.waterTempF,
-    clarityFt: forecast.current.clarityFt,
-    clarityRange: forecast.current.clarityRange,
-    clarityLabel: forecast.current.clarityLabel,
+    clarityFt:
+      typeof forecast.current.clarityFt === "number" ? forecast.current.clarityFt : null,
+    clarityRange: forecast.current.clarityRange || UNAVAILABLE_TEXT,
+    clarityLabel: forecast.current.clarityLabel || UNAVAILABLE_TEXT,
   };
 }
 
-export function buildForecastRowForSlot(spot: PinnedSpot, slotTime: string) {
-  const slotDate = new Date(slotTime);
-  const day = new Date(slotDate);
-  day.setHours(0, 0, 0, 0);
-
-  return buildHourlyForecastRows(spot, day).find(
-    (row) => new Date(row.timeIso).getTime() === slotDate.getTime(),
-  );
+export function buildForecastRowForSlot(_spot: PinnedSpot, _slotTime: string) {
+  return undefined;
 }
 
-export function getForecastClarityRangeForSlot(spot: PinnedSpot, slotTime: string) {
-  const row = buildForecastRowForSlot(spot, slotTime);
-  return row ? formatForecastClarityRange(row.clarityFt) : null;
+export function getForecastClarityRangeForSlot(_spot: PinnedSpot, _slotTime: string) {
+  return null;
 }
 
 export function getForecastClarityRangeForSlotFromApi(
@@ -261,59 +227,11 @@ export function getForecastClarityRangeForSlotFromApi(
 }
 
 export function buildHourlyForecastRows(
-  spot: PinnedSpot,
-  day: Date,
-  selectedSlotTime?: string | null,
+  _spot: PinnedSpot,
+  _day: Date,
+  __selectedSlotTime?: string | null,
 ) {
-  const seed = stableSeed(spot);
-  const start = new Date(day);
-  start.setHours(6, 0, 0, 0);
-  const now = new Date();
-  const isToday = toLocalDayKey(day) === toLocalDayKey(now);
-  const rows: HourlyForecastRow[] = [];
-
-  for (let hour = 6; hour <= 18; hour += 1) {
-    const time = new Date(start);
-    time.setHours(hour, 0, 0, 0);
-
-    if (isToday && time.getTime() < now.getTime() - 60 * 60 * 1000) {
-      continue;
-    }
-
-    const hourOffset = hour + day.getDate() * 0.5;
-    const waveHeightFt = roundTo(1.5 + seededUnit(seed, hourOffset) * 4.1, 1);
-    const wavePeriodSec = roundTo(7 + seededUnit(seed, hourOffset + 1) * 9, 0);
-    const tideHeightFt = roundTo(0.7 + seededUnit(seed, hourOffset + 2) * 4.8, 1);
-    const windSpeedKt = roundTo(3 + seededUnit(seed, hourOffset + 3) * 15, 0);
-    const waterTempF = roundTo(56 + seededUnit(seed, hourOffset + 4) * 11, 0);
-    const clarityFt = roundTo(6 + seededUnit(seed, hourOffset + 5) * 16, 0);
-    const clarityLabel = clarityLabelForFeet(clarityFt);
-    const tideTrend = seededUnit(seed, hourOffset + 6);
-    const tideDirection: HourlyForecastRow["tideDirection"] =
-      tideTrend > 0.66 ? "↗" : tideTrend > 0.33 ? "↘" : "→";
-    const windDirections = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
-    const windDirection = windDirections[Math.floor(seededUnit(seed, hourOffset + 7) * 8)] ?? "W";
-    const timeIso = time.toISOString();
-    const selected = selectedSlotTime ? new Date(selectedSlotTime).getTime() === time.getTime() : false;
-
-    rows.push({
-      id: `${spot.id}-${timeIso}`,
-      timeIso,
-      hourLabel: new Intl.DateTimeFormat(undefined, {
-        hour: "numeric",
-      }).format(time),
-      waveText: `${waveHeightFt.toFixed(1)} ft @ ${wavePeriodSec.toFixed(0)}s`,
-      tideText: `${tideHeightFt.toFixed(1)} ft`,
-      tideDirection,
-      clarityFt,
-      clarityLabel,
-      clarityText: selected ? `${clarityFt.toFixed(0)} ft • saved` : `${clarityFt.toFixed(0)} ft`,
-      waterTempF,
-      windText: `${windDirection} ${windSpeedKt.toFixed(0)} kt`,
-    });
-  }
-
-  return rows;
+  return [] satisfies HourlyForecastRow[];
 }
 
 function tideArrowFromTrend(value: number | null, previous: number | null, next: number | null) {
@@ -338,14 +256,14 @@ function formatHourLabel(date: Date) {
 }
 
 function formatWaveText(waveHeightFt: number | null, wavePeriodSec: number | null) {
-  if (waveHeightFt === null && wavePeriodSec === null) return "—";
+  if (waveHeightFt === null && wavePeriodSec === null) return UNAVAILABLE_TEXT;
   if (waveHeightFt === null) return `— @ ${Math.round(wavePeriodSec ?? 0)}s`;
   if (wavePeriodSec === null) return `${waveHeightFt.toFixed(1)} ft`;
   return `${waveHeightFt.toFixed(1)} ft @ ${Math.round(wavePeriodSec)}s`;
 }
 
 function formatTideText(heightFt: number | null) {
-  return heightFt === null ? "—" : `${heightFt.toFixed(1)} ft`;
+  return heightFt === null ? UNAVAILABLE_TEXT : `${heightFt.toFixed(1)} ft`;
 }
 
 function cardinalFromDegrees(degrees: number) {
@@ -387,14 +305,6 @@ function filterDisplayWindow(
   if (sun) {
     startMs = new Date(sun.sunriseIso).getTime();
     endMs = new Date(sun.sunsetIso).getTime();
-  } else {
-    const dayStart = new Date(`${dayKey}T00:00:00`);
-    const fallbackStart = new Date(dayStart);
-    fallbackStart.setHours(6, 0, 0, 0);
-    const fallbackEnd = new Date(dayStart);
-    fallbackEnd.setHours(18, 0, 0, 0);
-    startMs = fallbackStart.getTime();
-    endMs = fallbackEnd.getTime();
   }
 
   if (isToday) {
@@ -432,12 +342,11 @@ export function buildHourlyForecastRowsFromApi(
     const time = new Date(row.timeIso);
     const previousTide = index > 0 ? array[index - 1]?.tideHeightFt ?? null : null;
     const nextTide = index + 1 < array.length ? array[index + 1]?.tideHeightFt ?? null : null;
-    const rawClarityFt = row.predictedClarityFt ?? forecast.current.clarityFt;
-    const clarityFt = displayClarityFeetFromApiRow(row, rawClarityFt);
-    const clarityLabel = row.predictedClarityLabel ?? formatForecastClarityRange(rawClarityFt);
-    const selected = selectedSlotTime
-      ? new Date(selectedSlotTime).getTime() === time.getTime()
-      : false;
+    const clarityFt = displayClarityFeetFromApiRow(row);
+    const clarityLabel = row.predictedClarityLabel ??
+      (typeof row.predictedClarityFt === "number"
+        ? formatForecastClarityRange(row.predictedClarityFt)
+        : UNAVAILABLE_TEXT);
 
     return {
       id: `${spot.id}-${row.timeIso}`,
@@ -448,11 +357,11 @@ export function buildHourlyForecastRowsFromApi(
       tideDirection: tideArrowFromTrend(row.tideHeightFt, previousTide, nextTide),
       clarityFt,
       clarityLabel,
-      clarityText: selected ? `${clarityLabel} • saved` : clarityLabel,
+      clarityText: clarityLabel,
       waterTempF: row.waterTempF,
       windText:
         row.windDirectionDeg === null && row.windSpeedKt === null
-          ? "—"
+          ? UNAVAILABLE_TEXT
           : `${row.windDirectionDeg === null ? "—" : cardinalFromDegrees(row.windDirectionDeg)}${
               row.windSpeedKt === null ? "" : ` ${Math.round(row.windSpeedKt)} kt`
             }`,

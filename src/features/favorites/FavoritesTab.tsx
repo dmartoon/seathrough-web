@@ -65,7 +65,7 @@ function FavoriteSpotCard({
 
   const commitTitle = () => {
     const trimmed = titleDraft.trim();
-    const nextName = trimmed || "Dropped pin";
+    const nextName = trimmed || "Pinned Spot";
 
     if (nextName !== spot.name) {
       onRename(spot, nextName);
@@ -127,7 +127,7 @@ function FavoriteSpotCard({
                   }
                 }}
                 aria-label="Favorite name"
-                placeholder="Dropped pin"
+                placeholder="Pinned Spot"
                 tabIndex={isRenaming ? 0 : -1}
               />
             </div>

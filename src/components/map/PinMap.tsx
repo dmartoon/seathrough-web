@@ -1,5 +1,14 @@
-import { APIProvider, Map as GoogleMap, useMap } from "@vis.gl/react-google-maps";
+import { APIProvider, Map as GoogleMap, useMap, useMapsLibrary } from "@vis.gl/react-google-maps";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import {
+  coverageRequestMailtoUrl,
+  DropValidator,
+  findNearestSupportedLocation,
+  makePinnedSpot,
+  MAX_COVERAGE_MILES,
+  pickPlaceName,
+  distanceMiles,
+} from "../../domain/pinDrop";
 import type { PinnedSpot as SavedSpot } from "../../domain/types";
 import type { LatLng, MapViewState, PinnedSpot } from "../../types/map";
 
@@ -14,6 +23,9 @@ type PinMapProps = {
   onFavoriteSelect: (spot: SavedSpot) => void;
   onClearPin: () => void;
   onMapBackgroundClick?: () => void;
+  onInvalidDrop?: (message: string) => void;
+  onOutOfCoverage?: (coordinate: LatLng, mailtoUrl: string) => void;
+  onDropValidationChange?: (isValidating: boolean) => void;
 };
 
 type MapMode = "roadmap" | "hybrid";
@@ -59,17 +71,6 @@ function normalizeLatLng(value: unknown): LatLng | null {
   return { lat, lng };
 }
 
-function makePin(position: LatLng, label: string) {
-  const now = Date.now();
-
-  return {
-    id: `pin-${now}`,
-    position,
-    label,
-    createdAt: now,
-    updatedAt: now,
-  };
-}
 
 function SearchIcon() {
   return (
@@ -119,19 +120,13 @@ function MyLocationIcon() {
   );
 }
 
-function DraggablePin({
+function PinMarker({
   pin,
-  onPinChange,
 }: {
   pin: PinnedSpot | null;
-  onPinChange: (pin: PinnedSpot) => void;
 }) {
   const map = useMap();
   const markerRef = useRef<any>(null);
-  const pinRef = useRef<PinnedSpot | null>(pin);
-
-  pinRef.current = pin;
-
   useEffect(() => {
     const googleMaps = (window as Window & { google?: { maps?: any } }).google?.maps;
 
@@ -149,28 +144,15 @@ function DraggablePin({
       markerRef.current = new googleMaps.Marker({
         map,
         position: pin.position,
-        draggable: true,
+        draggable: false,
         title: pin.label,
-      });
-
-      markerRef.current.addListener("dragend", (event: { latLng?: unknown }) => {
-        const nextPosition = normalizeLatLng(event?.latLng);
-        const currentPin = pinRef.current;
-
-        if (!nextPosition || !currentPin) return;
-
-        onPinChange({
-          ...currentPin,
-          position: nextPosition,
-          updatedAt: Date.now(),
-        });
       });
     }
 
     markerRef.current.setMap(map);
     markerRef.current.setPosition(pin.position);
     markerRef.current.setTitle(pin.label);
-  }, [map, pin, onPinChange]);
+  }, [map, pin]);
 
   useEffect(() => {
     return () => {
@@ -293,16 +275,17 @@ function MapChrome({
   appName,
   mapMode,
   onMapModeToggle,
-  onPinChange,
+  onClearSelection,
   onViewChange,
 }: {
   appName: string;
   mapMode: MapMode;
   onMapModeToggle: () => void;
-  onPinChange: (pin: PinnedSpot) => void;
+  onClearSelection: () => void;
   onViewChange: (view: MapViewState) => void;
 }) {
   const map = useMap();
+  const geocodingLib = useMapsLibrary("geocoding");
   const geocoderRef = useRef<any>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [status, setStatus] = useState<string | null>(null);
@@ -310,12 +293,10 @@ function MapChrome({
   const satelliteActive = mapMode === "hybrid";
 
   useEffect(() => {
-    const googleMaps = (window as Window & { google?: { maps?: any } }).google?.maps;
-
-    if (googleMaps && !geocoderRef.current) {
-      geocoderRef.current = new googleMaps.Geocoder();
+    if (geocodingLib && !geocoderRef.current) {
+      geocoderRef.current = new geocodingLib.Geocoder();
     }
-  }, []);
+  }, [geocodingLib]);
 
   const applyMapState = (center: LatLng, zoom: number) => {
     onViewChange({ center, zoom });
@@ -353,8 +334,8 @@ function MapChrome({
       map?.setHeading?.(0);
       map?.setTilt?.(0);
 
+      onClearSelection();
       applyMapState(position, zoom);
-      onPinChange(makePin(position, match.formatted_address || query));
       setStatus(null);
     });
   };
@@ -376,8 +357,8 @@ function MapChrome({
         map?.panTo(next);
         map?.setZoom?.(zoom);
 
+        onClearSelection();
         applyMapState(next, zoom);
-        onPinChange(makePin(next, "My location"));
         setStatus(null);
       },
       (error) => {
@@ -442,8 +423,16 @@ function MapChrome({
 const LONG_PRESS_MS = 450;
 const MOVE_CANCEL_PX = 10;
 
-export function PinMap({
-  apiKey,
+export function PinMap(props: PinMapProps) {
+  return (
+    <APIProvider apiKey={props.apiKey}>
+      <PinMapInner {...props} />
+    </APIProvider>
+  );
+}
+
+function PinMapInner({
+  apiKey: _apiKey,
   appName,
   view,
   pin,
@@ -453,14 +442,51 @@ export function PinMap({
   onFavoriteSelect,
   onClearPin,
   onMapBackgroundClick,
+  onInvalidDrop,
+  onOutOfCoverage,
+  onDropValidationChange,
 }: PinMapProps) {
   const [mapMode, setMapMode] = useState<MapMode>("roadmap");
+  const geocodingLib = useMapsLibrary("geocoding");
   const mapCanvasRef = useRef<HTMLDivElement | null>(null);
   const projectionRef = useRef<MapProjection | null>(null);
   const pendingPressRef = useRef<PendingPress | null>(null);
   const pinRef = useRef<PinnedSpot | null>(pin);
+  const geocoderRef = useRef<any>(null);
+  const reverseGeocodeRequestRef = useRef(0);
+  const dropValidatorRef = useRef<DropValidator | null>(null);
+  const suppressNextMapClickRef = useRef(false);
 
   pinRef.current = pin;
+
+  useEffect(() => {
+    if (!geocodingLib) return;
+
+    if (!geocoderRef.current) {
+      geocoderRef.current = new geocodingLib.Geocoder();
+    }
+
+    if (!dropValidatorRef.current) {
+      dropValidatorRef.current = new DropValidator(async (coordinate) => {
+        const geocoder = geocoderRef.current;
+        if (!geocoder) return [];
+
+        return new Promise((resolve, reject) => {
+          geocoder.geocode({ location: coordinate }, (results: any[] | null, status: string) => {
+            if (status === "OK") {
+              resolve(results ?? []);
+              return;
+            }
+            if (status === "ZERO_RESULTS") {
+              resolve([]);
+              return;
+            }
+            reject(new Error(status));
+          });
+        });
+      });
+    }
+  }, [geocodingLib]);
 
   useEffect(() => {
     const element = mapCanvasRef.current;
@@ -496,19 +522,85 @@ export function PinMap({
       return normalizeLatLng(projection.fromContainerPixelToLatLng(point));
     };
 
-    const dropPinAtClientPoint = (clientX: number, clientY: number) => {
-      const position = clientPointToLatLng(clientX, clientY);
-      if (!position) return;
+    const applyAutoName = (pinId: string, fallbackLabel: string, results: any[] | null | undefined) => {
+      const pretty = pickPlaceName(results ?? []);
+      if (!pretty || pretty === fallbackLabel) {
+        return;
+      }
 
-      const now = Date.now();
+      const currentPin = pinRef.current;
+      if (!currentPin || currentPin.id !== pinId || currentPin.label !== fallbackLabel) {
+        return;
+      }
 
       onPinChange({
-        id: `pin-${now}`,
-        position,
-        label: "Dropped pin",
-        createdAt: pinRef.current?.createdAt ?? now,
-        updatedAt: now,
+        ...currentPin,
+        label: pretty,
+        updatedAt: Date.now(),
       });
+    };
+
+    const validateAndDropPinAtClientPoint = async (clientX: number, clientY: number) => {
+      const position = clientPointToLatLng(clientX, clientY);
+      const validator = dropValidatorRef.current;
+      if (!position || !validator) {
+        onDropValidationChange?.(false);
+        return;
+      }
+
+      try {
+        const decision = await validator.evaluateDrop(position);
+        if (!decision.allowed) {
+          onDropValidationChange?.(false);
+          onInvalidDrop?.(decision.message);
+          return;
+        }
+
+        const nearest = findNearestSupportedLocation(
+          decision.finalCoordinate.lat,
+          decision.finalCoordinate.lng,
+        );
+        const miles = nearest
+          ? distanceMiles(
+              decision.finalCoordinate.lat,
+              decision.finalCoordinate.lng,
+              nearest.latitude,
+              nearest.longitude,
+            )
+          : Number.POSITIVE_INFINITY;
+
+        if (!nearest || miles > MAX_COVERAGE_MILES) {
+          onDropValidationChange?.(false);
+          onOutOfCoverage?.(
+            decision.finalCoordinate,
+            coverageRequestMailtoUrl(decision.finalCoordinate),
+          );
+          return;
+        }
+
+        const nextPin = makePinnedSpot(decision.finalCoordinate);
+        onPinChange(nextPin);
+        onDropValidationChange?.(false);
+
+        const geocoder = geocoderRef.current;
+        if (!geocoder) {
+          return;
+        }
+
+        reverseGeocodeRequestRef.current += 1;
+        const requestId = reverseGeocodeRequestRef.current;
+
+        geocoder.geocode({ location: decision.finalCoordinate }, (results: any[] | null, status: string) => {
+          if (requestId !== reverseGeocodeRequestRef.current || status !== "OK") {
+            return;
+          }
+
+          applyAutoName(nextPin.id, nextPin.label, results);
+        });
+      } catch {
+        onDropValidationChange?.(false);
+        onInvalidDrop?.("Couldn't verify shoreline right now. Try again in a few seconds.");
+      }
     };
 
     const handlePointerDown = (event: PointerEvent) => {
@@ -536,7 +628,9 @@ export function PinMap({
         }
 
         currentPress.fired = true;
-        dropPinAtClientPoint(currentPress.currentX, currentPress.currentY);
+        suppressNextMapClickRef.current = true;
+        onDropValidationChange?.(true);
+        void validateAndDropPinAtClientPoint(currentPress.currentX, currentPress.currentY);
       }, LONG_PRESS_MS);
 
       pendingPressRef.current = pendingPress;
@@ -564,16 +658,7 @@ export function PinMap({
 
       if (!pendingPress || pendingPress.pointerId !== event.pointerId) return;
 
-      const movedX = event.clientX - pendingPress.startedX;
-      const movedY = event.clientY - pendingPress.startedY;
-      const movedDistance = Math.hypot(movedX, movedY);
-      const shouldClearPin = !pendingPress.fired && movedDistance <= MOVE_CANCEL_PX && Boolean(pinRef.current);
-
       clearPendingPress();
-
-      if (shouldClearPin) {
-        onClearPin();
-      }
     };
 
     element.addEventListener("pointerdown", handlePointerDown, true);
@@ -590,14 +675,13 @@ export function PinMap({
       element.removeEventListener("pointercancel", handlePointerEnd, true);
       element.removeEventListener("pointerleave", handlePointerEnd, true);
     };
-  }, [onClearPin, onPinChange]);
+  }, [onDropValidationChange, onInvalidDrop, onOutOfCoverage, onPinChange]);
 
   const handleProjectionReady = useCallback((projection: MapProjection | null) => {
     projectionRef.current = projection;
   }, []);
 
   return (
-    <APIProvider apiKey={apiKey}>
       <div ref={mapCanvasRef} className="map-canvas ios-map-canvas">
         <GoogleMap
           className="map-surface"
@@ -627,12 +711,17 @@ export function PinMap({
             onViewChange({ center, zoom });
           }}
           onClick={() => {
+            if (suppressNextMapClickRef.current) {
+              suppressNextMapClickRef.current = false;
+              return;
+            }
+
             onMapBackgroundClick?.();
           }}
         />
 
         <ProjectionBridge onProjectionReady={handleProjectionReady} />
-        <DraggablePin pin={pin} onPinChange={onPinChange} />
+        <PinMarker pin={pin} />
         <FavoriteMarkers favorites={favorites} onSelect={onFavoriteSelect} />
         <MapChrome
           appName={appName}
@@ -640,10 +729,12 @@ export function PinMap({
           onMapModeToggle={() =>
             setMapMode((current) => (current === "roadmap" ? "hybrid" : "roadmap"))
           }
-          onPinChange={onPinChange}
+          onClearSelection={() => {
+            onClearPin();
+            onMapBackgroundClick?.();
+          }}
           onViewChange={onViewChange}
         />
       </div>
-    </APIProvider>
   );
 }

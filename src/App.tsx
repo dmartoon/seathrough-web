@@ -16,7 +16,7 @@ import { SafetyNoticeScreen } from "./features/safety/SafetyNoticeScreen";
 import { useLocalMapState } from "./hooks/useLocalMapState";
 import { useFavoritesStore } from "./stores/useFavoritesStore";
 import { usePlannedDivesStore } from "./stores/usePlannedDivesStore";
-import type { PinnedSpot as MapPin } from "./types/map";
+import type { LatLng, PinnedSpot as MapPin } from "./types/map";
 
 type TabKey = "map" | "favorites" | "planned";
 
@@ -28,6 +28,13 @@ type AppConfig = {
 type DetailState = {
   spot: SavedSpot;
   initialSlotTime?: string | null;
+};
+
+type MapAlertState = {
+  title: string;
+  message: string;
+  coordinate?: LatLng | null;
+  mailtoUrl?: string | null;
 };
 
 const SAFETY_NOTICE_STORAGE_KEY = "st_hasSeenSafetyDisclaimer";
@@ -126,6 +133,8 @@ export default function App() {
   const [detailState, setDetailState] = useState<DetailState | null>(null);
   const [safetyPageOpen, setSafetyPageOpen] = useState(false);
   const [hasSeenSafetyNotice, setHasSeenSafetyNotice] = useState<boolean | null>(null);
+  const [mapDropChecking, setMapDropChecking] = useState(false);
+  const [mapAlert, setMapAlert] = useState<MapAlertState | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const { view, setView, pin, setPin, clearPin } = useLocalMapState();
   const favorites = useFavoritesStore();
@@ -291,6 +300,34 @@ export default function App() {
     [favorites, planned],
   );
 
+  const clearMapSelection = useCallback(() => {
+    setSelectedFavoriteMapId(null);
+    clearPin();
+    setMapDropChecking(false);
+    setMapAlert(null);
+  }, [clearPin]);
+
+  const handleInvalidDrop = useCallback((message: string) => {
+    setMapDropChecking(false);
+    setMapAlert({
+      title: "Can’t drop a pin here",
+      message,
+    });
+  }, []);
+
+  const handleOutOfCoverage = useCallback((coordinate: LatLng, mailtoUrl: string) => {
+    setSelectedFavoriteMapId(null);
+    clearPin();
+    setMapDropChecking(false);
+    setMapAlert({
+      title: "No data available for this location",
+      message:
+        "SeaThrough doesn’t have coverage for this spot yet. Tap “Request location data” to send the coordinates.",
+      coordinate,
+      mailtoUrl,
+    });
+  }, [clearPin]);
+
   const openDetail = useCallback((spot: SavedSpot, initialSlotTime?: string | null) => {
     setSafetyPageOpen(false);
     setDetailState({ spot, initialSlotTime });
@@ -300,11 +337,15 @@ export default function App() {
     setDetailState(null);
     setSafetyPageOpen(false);
     setMenuOpen(false);
+    setMapAlert(null);
+    setMapDropChecking(false);
     setTab("map");
   }, []);
 
   const handlePinChange = useCallback(
     (nextPin: MapPin) => {
+      setMapAlert(null);
+      setMapDropChecking(false);
       setSelectedFavoriteMapId(null);
       setPin(nextPin);
     },
@@ -334,9 +375,15 @@ export default function App() {
     [activeMapFavorite, pin, planned, renameSpotEverywhere, selectedMapFavorite, setPin],
   );
 
-  const handleFavoriteSelectOnMap = useCallback((spot: SavedSpot) => {
-    setSelectedFavoriteMapId(spot.id);
-  }, []);
+  const handleFavoriteSelectOnMap = useCallback(
+    (spot: SavedSpot) => {
+      clearPin();
+      setMapAlert(null);
+      setMapDropChecking(false);
+      setSelectedFavoriteMapId(spot.id);
+    },
+    [clearPin],
+  );
 
   const renderMainContent = () => {
     if (detailState) {
@@ -399,11 +446,10 @@ export default function App() {
             onViewChange={setView}
             onFavoriteSelect={handleFavoriteSelectOnMap}
             onClearPin={clearPin}
-            onMapBackgroundClick={() => {
-              if (selectedFavoriteMapId) {
-                setSelectedFavoriteMapId(null);
-              }
-            }}
+            onInvalidDrop={handleInvalidDrop}
+            onOutOfCoverage={handleOutOfCoverage}
+            onDropValidationChange={setMapDropChecking}
+            onMapBackgroundClick={clearMapSelection}
           />
 
           {activePopupSpot ? (
@@ -420,7 +466,7 @@ export default function App() {
 
           {showEmptyMapLongPressHint ? (
             <div className="map-empty-hint" aria-live="polite">
-              <div className="map-empty-hint-card">Long press anywhere on the map to drop a pin.</div>
+              <div className="map-empty-hint-card">Hold near shore to drop a pin.</div>
             </div>
           ) : null}
         </div>
@@ -538,6 +584,47 @@ export default function App() {
       ) : null}
 
       <main className="app-body ios-body">{renderMainContent()}</main>
+
+      {tab === "map" && mapDropChecking ? (
+        <div className="map-drop-status" aria-live="polite">
+          <div className="map-drop-status-card">
+            <div className="map-drop-spinner" aria-hidden="true" />
+            <div>Checking shoreline…</div>
+          </div>
+        </div>
+      ) : null}
+
+      {tab === "map" && mapAlert ? (
+        <div className="map-drop-alert-overlay" role="dialog" aria-modal="true" aria-label={mapAlert.title}>
+          <div className="map-drop-alert-card">
+            <h2>{mapAlert.title}</h2>
+            <p>{mapAlert.message}</p>
+            <div className="map-drop-alert-actions">
+              {mapAlert.mailtoUrl ? (
+                <>
+                  <button
+                    type="button"
+                    className="primary-button"
+                    onClick={() => {
+                      window.location.href = mapAlert.mailtoUrl ?? "mailto:support@seathrough.app";
+                      setMapAlert(null);
+                    }}
+                  >
+                    Request location data
+                  </button>
+                  <button type="button" className="secondary-button" onClick={() => setMapAlert(null)}>
+                    Cancel
+                  </button>
+                </>
+              ) : (
+                <button type="button" className="primary-button" onClick={() => setMapAlert(null)}>
+                  OK
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {!detailState && !safetyPageOpen ? (
         <nav className="tabbar floating-tabbar" aria-label="Primary navigation">

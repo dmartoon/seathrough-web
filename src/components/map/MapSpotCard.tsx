@@ -117,6 +117,30 @@ function WaterIcon() {
 
 type MetricType = "wave" | "tide" | "wind" | "water";
 
+function formatWaveValue(waveHeightFt: number | null, wavePeriodSec: number | null) {
+  if (waveHeightFt === null && wavePeriodSec === null) return "—";
+  if (waveHeightFt === null) return `— @ ${Math.round(wavePeriodSec ?? 0)}s`;
+  if (wavePeriodSec === null) return `${waveHeightFt.toFixed(1)} ft`;
+  return `${waveHeightFt.toFixed(1)} ft @ ${wavePeriodSec.toFixed(0)}s`;
+}
+
+function formatTideValue(
+  tideDirection: "Rising" | "Falling" | "Slack" | "Steady" | null,
+  tideHeightFt: number | null,
+) {
+  if (!tideDirection && tideHeightFt === null) return "—";
+  if (!tideDirection) return tideHeightFt === null ? "—" : `${tideHeightFt.toFixed(1)} ft`;
+  if (tideHeightFt === null) return `${tideDirection} —`;
+  return `${tideDirection} ${tideHeightFt.toFixed(1)} ft`;
+}
+
+function formatWindValue(windDirection: string | null, windSpeedKt: number | null) {
+  if (!windDirection && windSpeedKt === null) return "—";
+  if (!windDirection) return `${Math.round(windSpeedKt ?? 0)} kt`;
+  if (windSpeedKt === null) return windDirection;
+  return `${windDirection} ${windSpeedKt.toFixed(0)} kt`;
+}
+
 function metricIconFor(type: MetricType) {
   switch (type) {
     case "wave":
@@ -175,7 +199,7 @@ export function MapSpotCard({
 
   const commitTitle = () => {
     const trimmed = titleDraft.trim();
-    const nextName = trimmed || "Dropped pin";
+    const nextName = trimmed || "Pinned Spot";
 
     if (nextName !== spot.name) {
       onRename(nextName);
@@ -227,7 +251,7 @@ export function MapSpotCard({
                   }
                 }}
                 aria-label="Pin title"
-                placeholder="Dropped pin"
+                placeholder="Pinned Spot"
                 tabIndex={isRenaming ? 0 : -1}
               />
             </div>
@@ -259,20 +283,17 @@ export function MapSpotCard({
               {
                 icon: "wave" as const,
                 label: "Wave:",
-                value: `${conditions.waveHeightFt.toFixed(1)} ft @ ${conditions.wavePeriodSec.toFixed(0)}s`,
+                value: formatWaveValue(conditions.waveHeightFt, conditions.wavePeriodSec),
               },
               {
                 icon: "tide" as const,
                 label: "Tide:",
-                value:
-                  conditions.tideHeightFt === null
-                    ? `${conditions.tideDirection} —`
-                    : `${conditions.tideDirection} ${conditions.tideHeightFt.toFixed(1)} ft`,
+                value: formatTideValue(conditions.tideDirection, conditions.tideHeightFt),
               },
               {
                 icon: "wind" as const,
                 label: "Wind:",
-                value: `${conditions.windDirection} ${conditions.windSpeedKt.toFixed(0)} kt`,
+                value: formatWindValue(conditions.windDirection, conditions.windSpeedKt),
               },
               {
                 icon: "water" as const,
