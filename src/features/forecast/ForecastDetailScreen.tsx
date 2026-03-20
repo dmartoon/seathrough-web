@@ -259,19 +259,45 @@ function formatCurrentWindValue(
 function clarityChipStyle(ft: number | null) {
   if (ft === null || !Number.isFinite(ft)) {
     return {
-      color: "rgba(233, 239, 247, 0.88)",
-      backgroundColor: "rgba(255, 255, 255, 0.08)",
-      borderColor: "rgba(255, 255, 255, 0.14)",
+      color: "rgba(244, 248, 252, 0.92)",
+      backgroundColor: "rgba(255, 255, 255, 0.12)",
+      borderColor: "rgba(255, 255, 255, 0.22)",
+      boxShadow: "inset 0 0 0 1px rgba(255, 255, 255, 0.06)",
     };
   }
 
-  const clamped = Math.min(Math.max(ft, 0), 35);
-  const hue = (0.33 * (clamped / 35)) * 360;
+  if (ft >= 20) {
+    return {
+      color: "#f2ffef",
+      backgroundColor: "rgba(37, 112, 69, 0.52)",
+      borderColor: "rgba(123, 237, 168, 0.72)",
+      boxShadow: "inset 0 0 0 1px rgba(197, 255, 220, 0.08)",
+    };
+  }
+
+  if (ft >= 15) {
+    return {
+      color: "#fff8dc",
+      backgroundColor: "rgba(104, 102, 28, 0.58)",
+      borderColor: "rgba(224, 216, 95, 0.78)",
+      boxShadow: "inset 0 0 0 1px rgba(255, 244, 177, 0.08)",
+    };
+  }
+
+  if (ft >= 10) {
+    return {
+      color: "#fff1d6",
+      backgroundColor: "rgba(129, 79, 15, 0.6)",
+      borderColor: "rgba(255, 189, 82, 0.8)",
+      boxShadow: "inset 0 0 0 1px rgba(255, 219, 157, 0.08)",
+    };
+  }
 
   return {
-    color: `hsl(${hue} 85% 95%)`,
-    backgroundColor: `hsl(${hue} 85% 60% / 0.18)`,
-    borderColor: `hsl(${hue} 85% 60% / 0.35)`,
+    color: "#ffe2d4",
+    backgroundColor: "rgba(127, 50, 21, 0.62)",
+    borderColor: "rgba(255, 144, 89, 0.8)",
+    boxShadow: "inset 0 0 0 1px rgba(255, 204, 183, 0.08)",
   };
 }
 
