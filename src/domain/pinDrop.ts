@@ -11,20 +11,14 @@ const VALIDATED_TTL_MS = 30 * 60 * 1000;
 const VALIDATED_MAX = 200;
 const BEARINGS_4 = [0, 90, 180, 270] as const;
 const BEARINGS_DIAG = [45, 135, 225, 315] as const;
+const BEARINGS_12 = [0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330] as const;
 const OCEAN_TEXT = /\b(ocean|sea|bay|gulf|channel|strait|lagoon|reef|shoal|pacific|atlantic|cove|harbor|harbour|marine|underwater)\b/i;
-const STRONG_LAND_TYPES = new Set([
-  "street_address",
-  "premise",
-  "subpremise",
-  "route",
-  "intersection",
-  "point_of_interest",
-  "establishment",
-  "park",
-]);
+const UNDERWATER_FEATURE_TEXT = /\b(canyon|reef|shoal|bank|trench)\b/i;
 const CLASSIFY_RETRY_DELAYS_MS = [350, 800] as const;
 const MIN_GEOCODE_SPACING_MS = 140;
 const MAX_FAILURE_COOLDOWN_MS = 3000;
+const COASTAL_CHECK_RADII_MILES = [MAX_OFFSHORE_MILES, 3.75, 2.5, 1.25] as const;
+const SNAP_SEARCH_RADII_MILES = [0.125, 0.25, 0.375, MAX_INLAND_MILES] as const;
 
 type Surface = "ocean" | "land" | "unknown";
 
@@ -186,6 +180,24 @@ function destination(from: LatLng, bearingDeg: number, distanceMeters: number): 
   };
 }
 
+function isOceanLikeResult(result: ReverseGeocodeResult | undefined): boolean {
+  if (!result) return false;
+
+  const texts = [
+    result.formatted_address,
+    ...(result.address_components ?? []).flatMap((component) => [component.long_name, component.short_name]),
+  ].filter((value): value is string => Boolean(value));
+
+  const fullText = texts.join(" ");
+  if (OCEAN_TEXT.test(fullText)) {
+    return true;
+  }
+
+  return Boolean(
+    result.types?.includes("natural_feature") && UNDERWATER_FEATURE_TEXT.test(fullText),
+  );
+}
+
 export class DropValidator {
   private surfaceCache = new Map<string, Surface>();
   private validatedOceans: ValidatedOcean[] = [];
@@ -231,7 +243,7 @@ export class DropValidator {
     }
 
     if (surface === "ocean") {
-      const coastal = await this.ringHasLandTwoPass(pressed, this.maxOffshoreMiles);
+      const coastal = await this.hasLandNearby(pressed, this.maxOffshoreMiles);
       if (coastal) {
         this.rememberValidatedOcean(pressed);
         return { allowed: true, finalCoordinate: pressed, message: "" };
@@ -342,44 +354,17 @@ export class DropValidator {
     this.cooldownUntilMs = Date.now() + backoffMs;
   }
 
-  private hasOceanSignal(results: ReverseGeocodeResult[]) {
-    return results.some((result) => {
-      if (OCEAN_TEXT.test(result.formatted_address ?? "")) {
-        return true;
-      }
-
-      return (result.address_components ?? []).some((component) =>
-        OCEAN_TEXT.test(`${component.long_name ?? ""} ${component.short_name ?? ""}`),
-      );
-    });
-  }
-
-  private hasStrongLandSignal(results: ReverseGeocodeResult[]) {
-    return results.some((result) => {
-      if ((result.types ?? []).some((type) => STRONG_LAND_TYPES.has(type))) {
-        return true;
-      }
-
-      return (result.address_components ?? []).some((component) =>
-        component.types?.some((type) => STRONG_LAND_TYPES.has(type)),
-      );
-    });
-  }
-
   private classifyFromResults(results: ReverseGeocodeResult[]): Surface {
-    if (!results.length) {
+    const first = results[0];
+    if (!first) {
       return "unknown";
     }
 
-    if (this.hasOceanSignal(results)) {
+    if (isOceanLikeResult(first)) {
       return "ocean";
     }
 
-    if (this.hasStrongLandSignal(results)) {
-      return "land";
-    }
-
-    return "unknown";
+    return "land";
   }
 
   private async reverseGeocodeSurface(coordinate: LatLng): Promise<Surface> {
@@ -443,21 +428,36 @@ export class DropValidator {
     return false;
   }
 
-  private async ringHasLandTwoPass(center: LatLng, radiusMiles: number) {
-    if (await this.ringHasLand(center, radiusMiles, BEARINGS_4)) {
-      return true;
+  private async hasLandNearby(center: LatLng, maxMiles: number) {
+    const radii = COASTAL_CHECK_RADII_MILES.filter((radius) => radius <= maxMiles);
+
+    for (const radius of radii) {
+      if (await this.ringHasLand(center, radius, BEARINGS_4)) {
+        return true;
+      }
+      if (await this.ringHasLand(center, radius, BEARINGS_DIAG)) {
+        return true;
+      }
+      if (await this.ringHasLand(center, radius, BEARINGS_12)) {
+        return true;
+      }
     }
 
-    return this.ringHasLand(center, radiusMiles, BEARINGS_DIAG);
+    return false;
   }
 
   private async snapIntoOceanIfNearby(landPoint: LatLng, maxMiles: number): Promise<LatLng | null> {
-    const meters = maxMiles * 1609.344;
+    const radii = SNAP_SEARCH_RADII_MILES.filter((radius) => radius <= maxMiles);
 
-    return (
-      (await this.snapRing(landPoint, meters, BEARINGS_4)) ??
-      (await this.snapRing(landPoint, meters, BEARINGS_DIAG))
-    );
+    for (const radiusMiles of radii) {
+      const meters = radiusMiles * 1609.344;
+      const snapped = await this.snapRing(landPoint, meters, BEARINGS_12);
+      if (snapped) {
+        return snapped;
+      }
+    }
+
+    return null;
   }
 
   private async snapRing(
@@ -489,7 +489,7 @@ export class DropValidator {
     let low = 0;
     let high = maxDistanceMeters;
 
-    for (let step = 0; step < 2; step += 1) {
+    for (let step = 0; step < 3; step += 1) {
       const mid = (low + high) / 2;
       const probe = destination(landPoint, bearing, mid);
       const hinted = this.cachedOrInferredSurface(probe);
